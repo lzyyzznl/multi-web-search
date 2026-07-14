@@ -1,0 +1,30 @@
+{
+  "name": "multi-web-search",
+  "version": "1.0.0",
+  "description": "多引擎搜索聚合 — 并行搜索 Serper/Baidu/Brave/Tavily/阿里云IQS，自动去重合并排序",
+  "author": {
+    "name": "lzyyzznl",
+    "url": "https://github.com/lzyyzznl"
+  },
+  "homepage": "https://github.com/lzyyzznl/multi-web-search",
+  "repository": "https://github.com/lzyyzznl/multi-web-search.git",
+  "license": "MIT",
+  "skills": "./skills/",
+  "hooks": "./hooks/hooks.json",
+  "interface": {
+    "displayName": "Multi Web Search",
+    "shortDescription": "多引擎搜索聚合",
+    "longDescription": "并行调用 Serper(Google)/Baidu/Brave/Tavily/阿里云IQS 五个搜索引擎，自动去重合并排序。只需配置 API Key，统一入口 multi-web-search search。",
+    "developerName": "lzyyzznl",
+    "category": "Search & Research",
+    "capabilities": [
+      "Read"
+    ],
+    "defaultPrompt": [
+      "搜索 <关键词>",
+      "查一下 <query>",
+      "找资料 <关键词>"
+    ],
+    "brandColor": "#6366F1"
+  }
+}
