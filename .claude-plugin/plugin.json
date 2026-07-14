@@ -1,0 +1,6 @@
+{
+  "name": "multi-web-search",
+  "version": "1.0.0",
+  "description": "多引擎搜索聚合 — 并行搜索 Serper/Baidu/Brave/Tavily/阿里云IQS，自动去重合并排序",
+  "skills": "./skills/"
+}

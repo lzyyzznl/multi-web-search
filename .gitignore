@@ -1,0 +1,12 @@
+# 编译产物
+src/multi-web-search
+
+# 编辑器
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# 系统
+.DS_Store
+Thumbs.db

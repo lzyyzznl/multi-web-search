@@ -1,0 +1,23 @@
+{
+  "name": "multi-web-search-marketplace",
+  "owner": {
+    "name": "lzyyzznl"
+  },
+  "metadata": {
+    "description": "多引擎搜索聚合插件 — 并行搜索 Serper/Baidu/Brave/Tavily/阿里云IQS",
+    "version": "1.0.0"
+  },
+  "plugins": [
+    {
+      "name": "multi-web-search",
+      "source": {
+        "source": "url",
+        "url": "https://github.com/lzyyzznl/multi-web-search.git",
+        "ref": "main"
+      },
+      "description": "多引擎搜索聚合 — 并行搜索 Serper/Baidu/Brave/Tavily/阿里云IQS，自动去重合并排序",
+      "version": "1.0.0",
+      "strict": true
+    }
+  ]
+}
