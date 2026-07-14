@@ -1,10 +1,10 @@
 package engines
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 	"time"
 )
@@ -33,7 +33,7 @@ func (e *serperEngine) Search(ctx context.Context, query string) ([]SearchResult
 	payload, _ := json.Marshal(body)
 
 	req, err := http.NewRequestWithContext(ctx, "POST", "https://google.serper.dev/search",
-		io.NopCloser(readerFromBytes(payload)))
+		bytes.NewReader(payload))
 	if err != nil {
 		return nil, fmt.Errorf("serper: %w", err)
 	}
@@ -58,7 +58,6 @@ func (e *serperEngine) Search(ctx context.Context, query string) ([]SearchResult
 			Title   string  `json:"title"`
 			Link    string  `json:"link"`
 			Snippet string  `json:"snippet"`
-			Score   float64 `json:"position,omitempty"`
 		} `json:"organic"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
@@ -72,15 +71,7 @@ func (e *serperEngine) Search(ctx context.Context, query string) ([]SearchResult
 			URL:     r.Link,
 			Snippet: r.Snippet,
 			Source:  e.name,
-			Score:   r.Score,
 		})
 	}
 	return results, nil
 }
-
-// readerFromBytes 辅助函数，将 []byte 转为 io.Reader
-func readerFromBytes(b []byte) readerByteSlice { return b }
-
-type readerByteSlice []byte
-
-func (r readerByteSlice) Read(p []byte) (int, error) { return copy(p, r), nil }
