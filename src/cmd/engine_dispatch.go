@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/lzyyzznl/multi-web-search/cmd/engines"
 )
@@ -53,12 +54,8 @@ func isQuotaError(err string) bool {
 
 func containsAny(s string, substrs ...string) bool {
 	for _, sub := range substrs {
-		if len(sub) <= len(s) {
-			for i := 0; i <= len(s)-len(sub); i++ {
-				if s[i:i+len(sub)] == sub {
-					return true
-				}
-			}
+		if strings.Contains(s, sub) {
+			return true
 		}
 	}
 	return false

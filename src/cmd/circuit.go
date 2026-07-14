@@ -9,29 +9,20 @@ import (
 	"time"
 )
 
-// CircuitState 熔断状态.
-type CircuitState string
-
-const (
-	StateClosed CircuitState = "closed"
-	StateOpen   CircuitState = "open"
-)
-
 // circuitData 持久化到磁盘的熔断记录.
 type circuitData struct {
-	State     CircuitState `json:"state"`
-	OpenAt    time.Time    `json:"open_at"`
-	OpenUntil time.Time    `json:"open_until"`
-	Reason    string       `json:"reason"`
-	LastError string       `json:"last_error,omitempty"`
+	State     string    `json:"state"`
+	OpenAt    time.Time `json:"open_at"`
+	OpenUntil time.Time `json:"open_until"`
+	Reason    string    `json:"reason"`
+	LastError string    `json:"last_error,omitempty"`
 }
 
 // CircuitBreaker 每个引擎独立的熔断器.
 type CircuitBreaker struct {
-	mu       sync.Mutex
-	name     string
-	data     circuitData
-	dirty    bool // 需要持久化
+	mu   sync.Mutex
+	name string
+	data circuitData
 }
 
 const circuitFile = "circuit.json"
@@ -49,7 +40,7 @@ func circuitPath() (string, error) {
 }
 
 func NewCircuitBreaker(name string) *CircuitBreaker {
-	cb := &CircuitBreaker{name: name, data: circuitData{State: StateClosed}}
+	cb := &CircuitBreaker{name: name, data: circuitData{State: "closed"}}
 	cb.load()
 	return cb
 }
@@ -92,12 +83,12 @@ func (cb *CircuitBreaker) save() {
 func (cb *CircuitBreaker) IsOpen() bool {
 	cb.mu.Lock()
 	defer cb.mu.Unlock()
-	if cb.data.State == StateOpen && time.Now().After(cb.data.OpenUntil) {
-		cb.data.State = StateClosed
+	if cb.data.State == "open" && time.Now().After(cb.data.OpenUntil) {
+		cb.data.State = "closed"
 		cb.save()
 		return false
 	}
-	return cb.data.State == StateOpen
+	return cb.data.State == "open"
 }
 
 // Open 熔断该引擎 24 小时.
@@ -106,7 +97,7 @@ func (cb *CircuitBreaker) Open(reason, lastErr string) {
 	defer cb.mu.Unlock()
 	now := time.Now()
 	cb.data = circuitData{
-		State:     StateOpen,
+		State:     "open",
 		OpenAt:    now,
 		OpenUntil: now.Add(24 * time.Hour),
 		Reason:    reason,
@@ -119,7 +110,7 @@ func (cb *CircuitBreaker) Open(reason, lastErr string) {
 func (cb *CircuitBreaker) Status() string {
 	cb.mu.Lock()
 	defer cb.mu.Unlock()
-	if cb.data.State == StateClosed {
+	if cb.data.State == "closed" {
 		return "ok"
 	}
 	remaining := time.Until(cb.data.OpenUntil).Truncate(time.Second)

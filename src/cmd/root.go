@@ -96,9 +96,8 @@ func printPretty(resp *SearchResponse) {
 func Execute() {
 	searchCmd.Flags().Bool("json", false, "JSON 格式输出")
 	searchCmd.Flags().Bool("raw", false, "jq 友好 JSON")
-	searchCmd.Flags().String("time-range", "", "时间范围 [1d, 1w, 1m, 1y]")
-	searchCmd.Flags().Int("max-results", 50, "最大返回条数")
 
+	rootCmd.Flags().BoolP("version", "v", false, "print version and exit")
 	rootCmd.AddCommand(searchCmd, statusCmd)
 
 	if err := rootCmd.Execute(); err != nil {
@@ -107,23 +106,5 @@ func Execute() {
 }
 
 func init() {
-	rootCmd.Flags().BoolP("version", "v", false, "print version and exit")
-	rootCmd.Run = func(cmd *cobra.Command, args []string) {
-		version, _ := cmd.Flags().GetBool("version")
-		if version {
-			fmt.Println("1.0.0")
-			return
-		}
-		// 无子命令时显示 help 中英文混合
-		fmt.Println("multi-web-search — 多引擎搜索聚合工具\n")
-		fmt.Println("用法:")
-		fmt.Println("  multi-web-search search <query>    并行搜索所有可用引擎")
-		fmt.Println("  multi-web-search status            查看引擎状态")
-		fmt.Println("  multi-web-search --version         显示版本\n")
-		fmt.Println("支持的搜索引擎:")
-		for name, env := range envVarMap {
-			fmt.Printf("  %-12s (环境变量: %s)\n", name, env)
-		}
-		_ = cmd.Help()
-	}
+	rootCmd.Version = "1.0.0"
 }
