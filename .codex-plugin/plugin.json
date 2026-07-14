@@ -7,7 +7,7 @@
     "url": "https://github.com/lzyyzznl"
   },
   "homepage": "https://github.com/lzyyzznl/multi-web-search",
-  "repository": "https://github.com/lzyyzznl/multi-web-search.git",
+  "repository": "git@github.com:lzyyzznl/multi-web-search.git",
   "license": "MIT",
   "skills": "./skills/",
   "hooks": "./hooks/hooks.json",

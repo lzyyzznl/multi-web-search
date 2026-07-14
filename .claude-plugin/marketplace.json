@@ -12,7 +12,7 @@
       "name": "multi-web-search",
       "source": {
         "source": "url",
-        "url": "https://github.com/lzyyzznl/multi-web-search.git",
+        "url": "git@github.com:lzyyzznl/multi-web-search.git",
         "ref": "main"
       },
       "description": "多引擎搜索聚合 — 并行搜索 Serper/Baidu/Brave/Tavily/阿里云IQS，自动去重合并排序",
