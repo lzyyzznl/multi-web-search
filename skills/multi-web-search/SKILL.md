@@ -9,11 +9,13 @@ description: "聚合搜索插件，并行调用 Serper(Google)/Baidu/Brave/Tavil
 
 ## 用法
 
+二进制文件在同级 `scripts/multi-web-search`。
+
 ```bash
-multi-web-search search <query>          # 默认漂亮输出
-multi-web-search search <query> --json   # JSON 格式
-multi-web-search search <query> --raw    # 管道友好
-multi-web-search status                  # 查看引擎状态
+scripts/multi-web-search search <query>          # 默认漂亮输出
+scripts/multi-web-search search <query> --json   # JSON 格式
+scripts/multi-web-search search <query> --raw    # 管道友好
+scripts/multi-web-search status                  # 查看引擎状态
 ```
 
 ## 支持的引擎
@@ -31,11 +33,11 @@ multi-web-search status                  # 查看引擎状态
 ## jq 管道
 
 ```bash
-multi-web-search search "query" --raw | jq '.results[] | {title, url, score}'
-multi-web-search search "query" --raw | jq '.engine_status'
+scripts/multi-web-search search "query" --raw | jq '.results[] | {title, url, score}'
+scripts/multi-web-search search "query" --raw | jq '.engine_status'
 ```
 
 ## 熔断说明
 
 每个引擎独立熔断。429/403（配额耗尽）或连续失败超过阈值后自动熔断 24 小时，到期自动恢复。
-运行 `multi-web-search status` 查看各引擎状态。
+运行 `scripts/multi-web-search status` 查看各引擎状态。
