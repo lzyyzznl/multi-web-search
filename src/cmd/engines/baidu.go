@@ -26,13 +26,13 @@ func NewBaidu(apiKey string) Engine {
 
 func (e *baiduEngine) Name() string { return e.name }
 
-func (e *baiduEngine) Search(ctx context.Context, query string) ([]SearchResult, error) {
+func (e *baiduEngine) Search(ctx context.Context, query string, num int) ([]SearchResult, error) {
 	reqBody := map[string]interface{}{
 		"messages": []map[string]string{
 			{"content": query, "role": "user"},
 		},
-		"search_source":       "baidu_search_v2",
-		"resource_type_filter": []map[string]interface{}{{"type": "web", "top_k": 10}},
+		"search_source":        "baidu_search_v2",
+		"resource_type_filter": []map[string]interface{}{{"type": "web", "top_k": num}},
 	}
 	payload, _ := json.Marshal(reqBody)
 

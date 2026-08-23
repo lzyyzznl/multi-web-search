@@ -26,11 +26,11 @@ func NewTavily(apiKey string) Engine {
 
 func (e *tavilyEngine) Name() string { return e.name }
 
-func (e *tavilyEngine) Search(ctx context.Context, query string) ([]SearchResult, error) {
+func (e *tavilyEngine) Search(ctx context.Context, query string, num int) ([]SearchResult, error) {
 	reqBody := map[string]interface{}{
 		"api_key":     e.apiKey,
 		"query":       query,
-		"max_results": 10,
+		"max_results": num,
 	}
 	payload, _ := json.Marshal(reqBody)
 

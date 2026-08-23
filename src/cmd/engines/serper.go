@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"time"
 )
@@ -25,10 +26,10 @@ func NewSerper(apiKey string) Engine {
 
 func (e *serperEngine) Name() string { return e.name }
 
-func (e *serperEngine) Search(ctx context.Context, query string) ([]SearchResult, error) {
+func (e *serperEngine) Search(ctx context.Context, query string, num int) ([]SearchResult, error) {
 	body := map[string]interface{}{
 		"q":   query,
-		"num": 10,
+		"num": num,
 	}
 	payload, _ := json.Marshal(body)
 
@@ -50,7 +51,8 @@ func (e *serperEngine) Search(ctx context.Context, query string) ([]SearchResult
 		return nil, fmt.Errorf("serper: 429 rate limit")
 	}
 	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("serper: HTTP %d", resp.StatusCode)
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("serper: HTTP %d: %s", resp.StatusCode, string(body))
 	}
 
 	var data struct {

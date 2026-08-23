@@ -9,6 +9,7 @@ var envVarMap = map[string]string{
 	"brave":     "BRAVE_API_KEY",
 	"tavily":    "TAVILY_API_KEY",
 	"aliyun-iqs": "ALIYUN_IQS_API_KEY",
+	"exa":       "EXA_API_KEY",
 }
 
 // DetectEnabledEngines 遍历环境变量，返回有 API Key 的引擎列表.

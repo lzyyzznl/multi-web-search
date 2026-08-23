@@ -13,6 +13,7 @@ var engineWeight = map[string]float64{
 	"tavily":     0.85,
 	"baidu":      0.8,
 	"aliyun-iqs": 0.75,
+	"exa":        0.9,
 }
 
 // mergeResults 按 URL 去重 + 综合评分排序.

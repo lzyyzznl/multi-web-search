@@ -25,7 +25,7 @@ func NewBrave(apiKey string) Engine {
 
 func (e *braveEngine) Name() string { return e.name }
 
-func (e *braveEngine) Search(ctx context.Context, query string) ([]SearchResult, error) {
+func (e *braveEngine) Search(ctx context.Context, query string, num int) ([]SearchResult, error) {
 	req, err := http.NewRequestWithContext(ctx, "GET",
 		"https://api.search.brave.com/res/v1/web/search", nil)
 	if err != nil {
@@ -33,7 +33,7 @@ func (e *braveEngine) Search(ctx context.Context, query string) ([]SearchResult,
 	}
 	q := req.URL.Query()
 	q.Set("q", query)
-	q.Set("count", "10")
+	q.Set("count", fmt.Sprintf("%d", num))
 	req.URL.RawQuery = q.Encode()
 
 	req.Header.Set("X-Subscription-Token", e.apiKey)

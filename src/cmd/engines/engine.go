@@ -19,7 +19,7 @@ type SearchResult struct {
 // Engine 搜索引擎接口.
 type Engine interface {
 	Name() string
-	Search(ctx context.Context, query string) ([]SearchResult, error)
+	Search(ctx context.Context, query string, num int) ([]SearchResult, error)
 }
 
 // NormalizeURL 对 URL 做归一化用于去重.

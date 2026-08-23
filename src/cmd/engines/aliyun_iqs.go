@@ -26,11 +26,12 @@ func NewAliyunIQS(apiKey string) Engine {
 
 func (e *aliyunIqsEngine) Name() string { return e.name }
 
-func (e *aliyunIqsEngine) Search(ctx context.Context, query string) ([]SearchResult, error) {
+func (e *aliyunIqsEngine) Search(ctx context.Context, query string, num int) ([]SearchResult, error) {
 	reqBody := map[string]interface{}{
 		"query":      query,
 		"engineType": "Generic",
 		"timeRange":  "NoLimit",
+		"pageSize":   num,
 		"contents": map[string]interface{}{
 			"mainText":     false,
 			"markdownText": false,
@@ -79,7 +80,10 @@ func (e *aliyunIqsEngine) Search(ctx context.Context, query string) ([]SearchRes
 	}
 
 	results := make([]SearchResult, 0, len(data.PageItems))
-	for _, r := range data.PageItems {
+	for i, r := range data.PageItems {
+		if i >= num {
+			break
+		}
 		snippet := r.Summary
 		if snippet == "" {
 			snippet = r.Snippet
