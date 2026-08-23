@@ -1,5 +1,6 @@
 # 编译产物
 src/multi-web-search
+dist/
 
 # 编辑器
 .idea/

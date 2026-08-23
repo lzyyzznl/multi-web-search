@@ -11,6 +11,7 @@
 | Brave Search | `BRAVE_API_KEY` |
 | Tavily | `TAVILY_API_KEY` |
 | 阿里云 IQS | `ALIYUN_IQS_API_KEY` |
+| Exa | `EXA_API_KEY` |
 
 ## 使用
 
