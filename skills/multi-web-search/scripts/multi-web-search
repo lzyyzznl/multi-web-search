@@ -27,19 +27,29 @@ case "$(uname -m)" in
   *) echo "multi-web-search: 不支持的架构: $(uname -m)" >&2; exit 1 ;;
 esac
 
-# latest 解析为具体 tag，保证缓存按版本隔离、release 更新后自动跟随
+asset="multi-web-search-${os}-${arch}"
+LATEST_BASE="https://github.com/$REPO/releases/latest/download"
+
+# latest 解析为具体 tag：绕开 api.github.com（企业代理常拦截），HEAD 跟随 latest 重定向取实际版本
 if [ "$VER" = "latest" ]; then
-  VER="$(curl -fsSL "https://api.github.com/repos/$REPO/releases/latest" \
-    | sed -n 's/.*"tag_name":"\([^"]*\)".*/\1/p')"
+  VER="$(curl -sI -o /dev/null -w '%{redirect_url}' "$LATEST_BASE/$asset" \
+    | sed -n 's#.*/releases/download/\([^/]*\)/.*#\1#p')"
 fi
 
-asset="multi-web-search-${os}-${arch}"
+# 解析失败时 VER 为空，回退为 latest 整体跟随下载
+if [ -n "$VER" ]; then
+  dl_url="https://github.com/$REPO/releases/download/$VER/$asset"
+else
+  VER="latest"
+  dl_url="$LATEST_BASE/$asset"
+fi
+
 bin="$CACHE/$VER/$asset"
 if [ ! -x "$bin" ]; then
   mkdir -p "$(dirname "$bin")"
   tmp="${bin}.$$"
   echo "multi-web-search: 下载 $REPO@$VER ($os/$arch) ..." >&2
-  curl -fL --retry 3 -o "$tmp" "https://github.com/$REPO/releases/download/$VER/$asset"
+  curl -fL --retry 3 -o "$tmp" "$dl_url"
   chmod +x "$tmp"
   mv "$tmp" "$bin"
 fi
