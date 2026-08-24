@@ -15,6 +15,8 @@
 
 配置对应的 API Key 后即可使用，无需额外配置。至少需要配置一个引擎。
 
+二进制不随仓库分发：运行 `multi-web-search` 时，平台感知启动器（`skills/` 与 `bin/` 中的脚本）自动按当前系统（linux/darwin × amd64/arm64）从 GitHub Release 下载对应版本并缓存到 `~/.cache/multi-web-search/`。无网络时可设 `MULTI_WEB_SEARCH_BIN` 指向本地二进制；想锁版本设 `MULTI_WEB_SEARCH_VERSION`。
+
 ## 安装
 
 ### Claude Code
@@ -145,7 +147,7 @@ go mod tidy
 bash build.sh   # 本地构建 + 多平台交叉编译到 dist/
 ```
 
-构建产物自动部署到 `skills/multi-web-search/`、`bin/` 和 `dist/`，版本号由 git describe 注入。
+构建产物输出到 `dist/`（版本号由 git describe 注入）。`skills/` 与 `bin/` 中放的是平台感知启动器，不携带二进制——CI 按 tag 把 dist/ 全平台产物上传到 GitHub Release，启动器按当前系统架构拉取对应版本。
 
 ## 插件结构
 
@@ -163,8 +165,8 @@ multi-web-search/
 │   │   └── engines/         # 各引擎实现
 │   ├── main.go
 │   └── build.sh
-├── skills/multi-web-search/ # Claude/Codex 技能文档 + 二进制
-├── bin/                     # PATH 入口
+├── skills/multi-web-search/ # 技能文档 + 平台感知启动器（按平台拉取 Release 二进制）
+├── bin/                     # PATH 入口（同启动器）
 ├── hooks/                   # 生命周期钩子
 └── AGENTS.md                # 项目配置
 ```

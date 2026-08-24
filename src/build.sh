@@ -36,14 +36,6 @@ for p in "${PLATFORMS[@]}"; do
   CGO_ENABLED=0 GOOS="$GOOS" GOARCH="$GOARCH" go build -ldflags "$LDFLAGS" -o "$OUT" .
 done
 
-# 本地二进制复制到 skills/ 和 bin/
-SKILLS_DIR="../skills/multi-web-search"
-mkdir -p "$SKILLS_DIR" ../bin
-cp multi-web-search "$SKILLS_DIR/scripts/multi-web-search"
-cp multi-web-search ../bin/multi-web-search
-
 echo "✅ 构建完成"
 echo "  本地: multi-web-search"
-echo "  分发: $DIST/"
-echo "  skills/multi-web-search/scripts/multi-web-search"
-echo "  bin/multi-web-search"
+echo "  分发: $DIST/（上传到 GitHub Release 供各平台拉取）"

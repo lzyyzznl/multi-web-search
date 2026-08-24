@@ -9,7 +9,9 @@ description: "聚合搜索插件，并行调用 Serper(Google)/Baidu/Brave/Tavil
 
 ## 用法
 
-二进制文件在同级 `scripts/multi-web-search`。
+```
+同级 `scripts/multi-web-search` 是平台感知启动器：首次运行自动下载当前平台对应 架构二进制并缓存到 `~/.cache/multi-web-search/`；可用 `MULTI_WEB_SEARCH_VERSION` 锁版本、`MULTI_WEB_SEARCH_BIN` 指向本地二进制。
+```
 
 ```bash
 scripts/multi-web-search search <query>          # 默认漂亮输出
