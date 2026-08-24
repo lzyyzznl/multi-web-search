@@ -2,14 +2,17 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 
-VERSION="$(git -C .. describe --tags --always 2>/dev/null || echo "dev")"
+VERSION="$(git -C .. describe --tags --always 2>/dev/null | sed 's/^v//' || echo "dev")"
 LDFLAGS="-X 'github.com/lzyyzznl/multi-web-search/cmd.Version=${VERSION}'"
 
 echo "🔨 构建 multi-web-search (v${VERSION})..."
 
-# 本地平台构建（当前机器的二进制）
-CGO_ENABLED=0 go build -ldflags "$LDFLAGS" -o multi-web-search .
-echo "  ✅ 本地构建: multi-web-search"
+DIST="../dist"
+mkdir -p "$DIST"
+
+# 本地平台构建（当前机器，按平台命名输出到 dist/，与其他平台统一供 Release 上传）
+CGO_ENABLED=0 go build -ldflags "$LDFLAGS" -o "$DIST/multi-web-search-$(go env GOOS)-$(go env GOARCH)" .
+echo "  ✅ 本地构建: $DIST/multi-web-search-$(go env GOOS)-$(go env GOARCH)"
 
 # 多平台交叉编译矩阵
 PLATFORMS=(
@@ -19,8 +22,6 @@ PLATFORMS=(
   "darwin/arm64"
   "windows/amd64"
 )
-DIST="../dist"
-mkdir -p "$DIST"
 
 for p in "${PLATFORMS[@]}"; do
   GOOS="${p%/*}"
@@ -37,5 +38,4 @@ for p in "${PLATFORMS[@]}"; do
 done
 
 echo "✅ 构建完成"
-echo "  本地: multi-web-search"
 echo "  分发: $DIST/（上传到 GitHub Release 供各平台拉取）"
