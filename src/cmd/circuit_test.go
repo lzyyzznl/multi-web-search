@@ -6,12 +6,19 @@ import (
 )
 
 // tempHome 为测试创建隔离 HOME，避免污染真实熔断状态.
+// 注意：os.UserHomeDir() 在 Windows 读 USERPROFILE，Linux/macOS 读 HOME，
+// 两者都要隔离，否则测试状态会持久化到真实用户目录.
 func tempHome(t *testing.T) string {
 	t.Helper()
 	dir := t.TempDir()
-	old := os.Getenv("HOME")
+	oldHome := os.Getenv("HOME")
+	oldProfile := os.Getenv("USERPROFILE")
 	os.Setenv("HOME", dir)
-	t.Cleanup(func() { os.Setenv("HOME", old) })
+	os.Setenv("USERPROFILE", dir)
+	t.Cleanup(func() {
+		os.Setenv("HOME", oldHome)
+		os.Setenv("USERPROFILE", oldProfile)
+	})
 	return dir
 }
 

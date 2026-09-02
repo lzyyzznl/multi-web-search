@@ -1,25 +1,88 @@
 #!/usr/bin/env bash
 # multi-web-search 启动器：按当前平台从 GitHub Releases 拉取对应二进制并执行。
-# 二进制不随仓库(技能)分发——分发单元是 git，不能绑死单平台；平台差异在安装时解决。
+#
+# 代理策略（自动检测）：
+#   1. 已设置 HTTPS_PROXY/https_proxy → 沿用，不覆盖
+#   2. Windows → 读系统注册表代理 (ProxyEnable/ProxyServer)，且端口确实在监听才用
+#   3. Linux/macOS → 探测常见本地代理端口 (10808/10809/7890/7897/1080/8081/8888)
+#   检测到可用代理 → 注入 HTTPS_PROXY/HTTP_PROXY 后调用（Brave 等直连被墙的引擎需要）；
+#   无代理 → 直连。
 #
 # 环境变量：
-#   MULTI_WEB_SEARCH_VERSION  固定版本(tag，如 v1.0.0)，默认 latest
-#   MULTI_WEB_SEARCH_BIN      本地二进制路径，跳过下载（源码开发/离线场景）
+#   MULTI_WEB_SEARCH_VERSION      固定版本(tag，如 v1.0.0)，默认 latest
+#   MULTI_WEB_SEARCH_BIN          本地二进制路径，跳过下载（源码开发/离线场景）
+#   MULTI_WEB_SEARCH_NO_PROXY     置 1 跳过代理检测，强制直连
 set -euo pipefail
 
 REPO="lzyyzznl/multi-web-search"
 VER="${MULTI_WEB_SEARCH_VERSION:-latest}"
 CACHE="${XDG_CACHE_HOME:-$HOME/.cache}/multi-web-search"
 
+# ---- 代理检测：有可用本地代理就 export HTTPS_PROXY/HTTP_PROXY，否则直连 ----
+detect_proxy() {
+  [ "${MULTI_WEB_SEARCH_NO_PROXY:-0}" = "1" ] && return 0
+
+  # 已有显式代理配置则沿用
+  if [ -n "${HTTPS_PROXY:-}${https_proxy:-}" ]; then
+    echo "multi-web-search: 使用已有 HTTPS_PROXY=${HTTPS_PROXY:-$https_proxy}" >&2
+    return 0
+  fi
+
+  local proxy=""
+  case "$(uname -s)" in
+    MINGW*|MSYS*|CYGWIN*)
+      # Windows：读系统注册表代理
+      local pe ps
+      pe="$(reg query "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings" /v ProxyEnable 2>/dev/null | sed -n 's/.*REG_DWORD[[:space:]]*//p' | tr -d '[:space:]')"
+      if [ "${pe:-0x0}" = "0x1" ]; then
+        ps="$(reg query "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings" /v ProxyServer 2>/dev/null | sed -n 's/.*REG_SZ[[:space:]]*//p' | tr -d '\r')"
+        # 多协议格式 "http=host:port;https=host:port" → 优先 https 段，其次 http 段
+        if [ -n "$ps" ] && [ "${ps#*=}" != "$ps" ]; then
+          ps="$(printf '%s' "$ps" | tr ';' '\n' | sed -n 's/^https=//p' | head -n1)"
+          [ -z "$ps" ] && ps="$(printf '%s' "$ps" | tr ';' '\n' | sed -n 's/^http=//p' | head -n1)"
+        fi
+        if [ -n "$ps" ]; then
+          # 端口确实在监听（代理进程活着）才使用
+          if netstat -ano 2>/dev/null | awk -v p=":${ps##*:} " 'index($0,p) && $0 ~ /LISTENING/ {f=1} END{exit !f}'; then
+            proxy="http://$ps"
+          else
+            echo "multi-web-search: 检测到代理配置 $ps 但端口未监听，改为直连" >&2
+          fi
+        fi
+      fi
+      ;;
+    *)
+      # Linux/macOS：探测常见本地代理端口（未监听立即失败，开销可忽略）
+      for port in 10808 10809 7890 7897 1080 8081 8888; do
+        if (exec 3<>"/dev/tcp/127.0.0.1/$port") 2>/dev/null; then
+          exec 3>&- 3<&-
+          proxy="http://127.0.0.1:$port"
+          break
+        fi
+      done
+      ;;
+  esac
+
+  if [ -n "$proxy" ]; then
+    export HTTPS_PROXY="$proxy" HTTP_PROXY="$proxy"
+    echo "multi-web-search: 使用本地代理 $proxy" >&2
+  else
+    echo "multi-web-search: 未检测到代理，直连" >&2
+  fi
+  return 0
+}
+
 # 本地二进制直通（开发/离线/无 release 兜底）
 if [ -n "${MULTI_WEB_SEARCH_BIN:-}" ]; then
+  detect_proxy
   exec "$MULTI_WEB_SEARCH_BIN" "$@"
 fi
 
 case "$(uname -s)" in
   Linux)  os="linux" ;;
   Darwin) os="darwin" ;;
-  *) echo "multi-web-search: 不支持的平台: $(uname -s)（Windows 请用 git-bash/WSL 或源码构建）" >&2; exit 1 ;;
+  MINGW*|MSYS*|CYGWIN*) os="windows" ;;
+  *) echo "multi-web-search: 不支持的平台: $(uname -s)" >&2; exit 1 ;;
 esac
 case "$(uname -m)" in
   x86_64|amd64)  arch="amd64" ;;
@@ -28,7 +91,11 @@ case "$(uname -m)" in
 esac
 
 asset="multi-web-search-${os}-${arch}"
+[ "$os" = "windows" ] && asset="${asset}.exe"
 LATEST_BASE="https://github.com/$REPO/releases/latest/download"
+
+# 下载也走代理（GitHub 可能被墙）
+detect_proxy
 
 # latest 解析为具体 tag：绕开 api.github.com（企业代理常拦截），HEAD 跟随 latest 重定向取实际版本
 if [ "$VER" = "latest" ]; then
