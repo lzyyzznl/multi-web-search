@@ -37,6 +37,19 @@ func TestShellQuote(t *testing.T) {
 	}
 }
 
+// TestWriteProfileEnvDirMissing 覆盖父目录不存在（全新用户 HOME）场景：
+// 写入应自动创建目录而非报错. 回归 bug: 原子写 os.CreateTemp 在目录缺失时失败.
+func TestWriteProfileEnvDirMissing(t *testing.T) {
+	home := filepath.Join(t.TempDir(), "deep", "nested", "home") // 目录不存在
+	if err := writeProfileEnv(home, "SERPER_API_KEY", "k"); err != nil {
+		t.Fatalf("目录不存在时写入失败: %v", err)
+	}
+	content, _ := os.ReadFile(filepath.Join(home, ".profile"))
+	if !strings.Contains(string(content), "export SERPER_API_KEY='k'") {
+		t.Errorf("内容不对: %q", string(content))
+	}
+}
+
 func TestWriteProfileEnv(t *testing.T) {
 	tmp := t.TempDir() // 纯函数直接传目录，不依赖真实 HOME
 

@@ -42,8 +42,12 @@ func writeProfileEnv(home, name, value string) error {
 		lines = append(lines, line)
 	}
 
-	// 原子写：写同目录 tmp 后 rename，避免中途断电留下半截文件
+	// 原子写：写同目录 tmp 后 rename，避免中途断电留下半截文件。
+	// 目录可能不存在（全新用户/隔离 HOME），先创建。
 	dir := filepath.Dir(profile)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return fmt.Errorf("创建目录 %s 失败: %v", dir, err)
+	}
 	tmp, err := os.CreateTemp(dir, ".profile-*.tmp")
 	if err != nil {
 		return fmt.Errorf("创建临时文件失败: %v", err)
