@@ -1,31 +1,53 @@
 ---
 name: multi-web-search
-description: "聚合搜索插件，并行调用 Serper(Google)/Baidu/Brave/Tavily/阿里云IQS/Exa 六个搜索引擎，自动去重合并排序。触发关键词：搜索、查资料、找文档、web search、research。"
+description: 多引擎搜索聚合，六个引擎并行搜索、自动去重合并排序。适用于需要多源聚合、国内可访问搜索、指定引擎搜索的场景。
 ---
 
 # Multi Web Search
 
-多引擎搜索聚合，统一入口，自动发现 API Key。
+## 何时触发
 
-## 用法
+用户请求「搜索」「查找资料」「web search」「research」等搜索意图时触发。适用于：
+- 需要多源聚合结果（单一引擎可能遗漏）
+- 需要中文搜索（百度、阿里云 IQS）
+- 需要绕过地域限制的搜索引擎（Brave 在国内直连被墙）
+- 用户指定使用搜索引擎
 
+## 二进制
+
+平台二进制在技能目录的 `scripts/` 下：
+
+| 平台 | 路径 |
+|------|------|
+| Windows | `scripts/multi-web-search.exe` |
+| Linux (amd64) | `scripts/multi-web-search-linux` |
+
+执行：
+```bash
+scripts/multi-web-search.exe search "query"          # Windows
+scripts/multi-web-search-linux search "query"        # Linux
 ```
-同级 `scripts/multi-web-search` 是平台感知启动器：首次运行自动下载当前平台对应 架构二进制并缓存到 `~/.cache/multi-web-search/`；可用 `MULTI_WEB_SEARCH_VERSION` 锁版本、`MULTI_WEB_SEARCH_BIN` 指向本地二进制。
-```
+
+## 输出格式
 
 ```bash
-scripts/multi-web-search search <query>          # 默认漂亮输出
-scripts/multi-web-search search <query> --json   # JSON 格式
-scripts/multi-web-search search <query> --raw    # 管道友好
-scripts/multi-web-search search <query> --engines serper,exa --num 5 --no-cache
-scripts/multi-web-search status                  # 查看引擎状态
+scripts/multi-web-search.exe search "query" --json   # JSON（推荐，解析用）
+scripts/multi-web-search.exe search "query" --raw    # 纯 JSON，管道友好
+scripts/multi-web-search.exe status                  # 检查引擎状态
 ```
 
 ## 参数
 
-`--num N` 每引擎条数（默认10）；`--engines a,b` 只用指定引擎；`--timeout N` 超时秒数（默认8）；`--no-cache` 跳过缓存。结果默认缓存15分钟。
+| 参数 | 说明 | 默认 |
+|------|------|------|
+| `--num N` | 每个引擎返回条数 | 10 |
+| `--engines a,b` | 只用指定引擎，逗号分隔 | 全部已配置 |
+| `--timeout N` | 整体超时（秒） | 8 |
+| `--no-cache` | 跳过缓存，强制实时搜索 | 关 |
 
-## 支持的引擎
+## 引擎与 API Key
+
+支持的引擎需要对应环境变量：
 
 | 引擎 | 环境变量 |
 |------|---------|
@@ -36,16 +58,27 @@ scripts/multi-web-search status                  # 查看引擎状态
 | 阿里云 IQS | `ALIYUN_IQS_API_KEY` |
 | Exa | `EXA_API_KEY` |
 
-配置对应 API Key 后即可使用，无需额外配置。至少需要配置一个引擎。
+至少需要配置一个引擎。代理自动检测：已配置本地代理（Windows 注册表 / Linux 常见端口）时自动走代理，否则直连。
 
-## jq 管道
+## 输出解析
+
+建议使用 `--raw` 获取纯 JSON 解析：
 
 ```bash
-scripts/multi-web-search search "query" --raw | jq '.results[] | {title, url, score}'
-scripts/multi-web-search search "query" --raw | jq '.engine_status'
+scripts/multi-web-search.exe search "query" --raw | jq '.results[] | {title, url, score}'
+scripts/multi-web-search.exe search "query" --raw | jq '.engine_status'
 ```
 
-## 熔断说明
+JSON 结构：
+```json
+{
+  "query": "...",
+  "meta": { "total_raw": N, "total_unique": N, "duration_ms": N },
+  "engine_status": { "engine_name": { "status": "ok|error", "results": N, "latency_ms": N } },
+  "results": [{ "title": "...", "url": "...", "snippet": "...", "source": "engine", "score": N }]
+}
+```
 
-每个引擎独立熔断。429/403（配额耗尽）或连续失败超过阈值后自动熔断 24 小时，到期自动恢复。
-运行 `scripts/multi-web-search status` 查看各引擎状态。
+## 熔断
+
+每个引擎独立熔断。429/403 或连续失败超过阈值后自动熔断 24 小时，到期自动恢复。用 `status` 命令查看状态。
