@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+# multi-web-search 统一入口：按当前平台选择就地二进制执行。
+# Windows 真身必须是 .exe（git-bash/cmd 均要求），Linux 真身为 ELF；
+# 平台差异由此脚本屏蔽，技能内统一调用 ./multi-web-search。
+set -euo pipefail
+
+DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+case "$(uname -s)" in
+  MINGW*|MSYS*|CYGWIN*) BIN="$DIR/multi-web-search.exe" ;;
+  Linux)                BIN="$DIR/multi-web-search-linux" ;;
+  Darwin)               BIN="$DIR/multi-web-search-darwin" ;;
+  *) echo "multi-web-search: 不支持的平台: $(uname -s)" >&2; exit 1 ;;
+esac
+
+if [ ! -f "$BIN" ]; then
+  echo "multi-web-search: 缺少当前平台二进制 $BIN" >&2
+  exit 1
+fi
+
+exec "$BIN" "$@"

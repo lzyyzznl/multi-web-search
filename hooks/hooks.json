@@ -1,15 +1,1 @@
-{
-  "hooks": {
-    "SessionStart": [
-      {
-        "matcher": "startup|clear|compact",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "export PATH=\"${CLAUDE_PLUGIN_ROOT:-$PLUGIN_ROOT}/bin:$PATH\""
-          }
-        ]
-      }
-    ]
-  }
-}
+{"hooks":{"SessionStart":[{"matcher":"startup|clear|compact","hooks":[{"type":"command","command":"export PATH=\"${CLAUDE_PLUGIN_ROOT:-$PLUGIN_ROOT}/skills/multi-web-search/scripts:$PATH\""}]}]}}

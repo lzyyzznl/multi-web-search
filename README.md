@@ -15,7 +15,16 @@
 
 配置对应的 API Key 后即可使用，无需额外配置。至少需要配置一个引擎。
 
-二进制不随仓库分发：运行 `multi-web-search` 时，平台感知启动器（`skills/` 与 `bin/` 中的脚本）自动按当前系统（linux/darwin × amd64/arm64）从 GitHub Release 下载对应版本并缓存到 `~/.cache/multi-web-search/`。无网络时可设 `MULTI_WEB_SEARCH_BIN` 指向本地二进制；想锁版本设 `MULTI_WEB_SEARCH_VERSION`。
+## 二进制
+
+平台二进制直接携带在技能目录 `skills/multi-web-search/scripts/` 下：
+
+| 平台 | 路径 |
+|------|------|
+| Windows (amd64) | `multi-web-search.exe` |
+| Linux (amd64) | `multi-web-search-linux` |
+
+调用统一入口 `multi-web-search`（按当前平台自动选择对应二进制执行，无 `.exe`/`-linux` 后缀差异）。darwin 暂无分发二进制。
 
 ## 安装
 
@@ -118,7 +127,7 @@ multi-web-search status
 
 - **全并行** — goroutine 同时调用所有可用引擎，互不影响
 - **自动发现** — 自动检测环境变量中的 API Key
-- **代理自动检测** — 启动时检测本地代理：已设 `HTTPS_PROXY` 沿用；Windows 读注册表代理（`ProxyEnable`/`ProxyServer`，支持 `http=...;https=...` 多协议格式）并验证端口监听；Linux/macOS 探测常见本地代理端口（`10808/10809/7890/7897/1080/8081/8888`）。检测到可用代理自动注入 `HTTPS_PROXY` 走代理，无代理直连。`MULTI_WEB_SEARCH_NO_PROXY=1` 可强制直连。适合 Brave 等直连被墙的引擎。
+- **代理自动检测** — 二进制内嵌：已设 `HTTPS_PROXY` 沿用；Windows 读注册表代理（`ProxyEnable`/`ProxyServer`，支持 `http=...;https=...` 多协议格式）并验证端口监听；Linux/macOS 探测常见本地代理端口（`10808/10809/7890/7897/1080/8081/8888`）。检测到可用代理自动注入 `HTTPS_PROXY` 走代理，无代理直连。`MULTI_WEB_SEARCH_NO_PROXY=1` 可强制直连。适合 Brave 等直连被墙的引擎。
 - **整体超时** — 单次搜索总超时（默认 8s），超时引擎标记失败不阻塞整体
 - **熔断保护** — 配额耗尽(429/403)或连续失败后熔断 24h，到期自动恢复（进程级锁 + 原子写保护状态文件）
 - **磁盘缓存** — 相同 query 15 分钟内命中缓存，节省付费 API 调用
@@ -148,7 +157,7 @@ go mod tidy
 bash build.sh   # 本地构建 + 多平台交叉编译到 dist/
 ```
 
-构建产物输出到 `dist/`（版本号由 git describe 注入）。`skills/` 与 `bin/` 中放的是平台感知启动器，不携带二进制——CI 按 tag 把 dist/ 全平台产物上传到 GitHub Release，启动器按当前系统架构拉取对应版本。
+构建产物输出到 `dist/`（版本号由 git describe 注入）。`scripts/` 中放的是统一入口启动器 + 就地二进制：构建后把对应平台产物复制到 `skills/multi-web-search/scripts/`（Windows → `multi-web-search.exe`，Linux → `multi-web-search-linux`）随仓库分发。CI 按 tag 把 dist/ 全平台产物上传到 GitHub Release。
 
 ## 插件结构
 
@@ -163,12 +172,16 @@ multi-web-search/
 │   │   ├── merge.go         # URL 去重 + 排序
 │   │   ├── circuit.go       # 熔断器
 │   │   ├── env.go           # API Key 自动检测
+│   │   ├── proxy.go         # 代理自动检测（内嵌）
 │   │   └── engines/         # 各引擎实现
 │   ├── main.go
 │   └── build.sh
-├── skills/multi-web-search/ # 技能文档 + 平台感知启动器（按平台拉取 Release 二进制）
-├── bin/                     # PATH 入口（同启动器）
-├── hooks/                   # 生命周期钩子
+├── skills/multi-web-search/ # 技能文档 + 统一入口启动器 + 就地平台二进制
+│   └── scripts/
+│       ├── multi-web-search          # 统一入口（按平台 exec 真身）
+│       ├── multi-web-search.exe      # Windows amd64 二进制
+│       └── multi-web-search-linux    # Linux amd64 二进制
+├── hooks/                   # 生命周期钩子（PATH 注入统一入口目录）
 └── AGENTS.md                # 项目配置
 ```
 

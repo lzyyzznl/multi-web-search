@@ -13,27 +13,23 @@ description: 多引擎搜索聚合，六个引擎并行搜索、自动去重合�
 - 需要绕过地域限制的搜索引擎（Brave 在国内直连被墙）
 - 用户指定使用搜索引擎
 
-## 二进制
+## 执行
 
-平台二进制在技能目录的 `scripts/` 下：
+统一入口（跨平台同名，按当前系统自动选择就地二进制）：
 
-| 平台 | 路径 |
-|------|------|
-| Windows | `scripts/multi-web-search.exe` |
-| Linux (amd64) | `scripts/multi-web-search-linux` |
-
-执行：
 ```bash
-scripts/multi-web-search.exe search "query"          # Windows
-scripts/multi-web-search-linux search "query"        # Linux
+scripts/multi-web-search search "query"          # 搜索
+scripts/multi-web-search status                   # 检查引擎状态
+scripts/multi-web-search --version                # 版本
 ```
+
+`scripts/` 下携带各平台就地二进制（`multi-web-search.exe` Windows / `multi-web-search-linux` Linux），由 `scripts/multi-web-search` 启动器按平台选择执行。darwin 暂无分发二进制。
 
 ## 输出格式
 
 ```bash
-scripts/multi-web-search.exe search "query" --json   # JSON（推荐，解析用）
-scripts/multi-web-search.exe search "query" --raw    # 纯 JSON，管道友好
-scripts/multi-web-search.exe status                  # 检查引擎状态
+scripts/multi-web-search search "query" --json   # JSON（推荐，解析用）
+scripts/multi-web-search search "query" --raw    # 纯 JSON，管道友好
 ```
 
 ## 参数
@@ -65,8 +61,8 @@ scripts/multi-web-search.exe status                  # 检查引擎状态
 建议使用 `--raw` 获取纯 JSON 解析：
 
 ```bash
-scripts/multi-web-search.exe search "query" --raw | jq '.results[] | {title, url, score}'
-scripts/multi-web-search.exe search "query" --raw | jq '.engine_status'
+scripts/multi-web-search search "query" --raw | jq '.results[] | {title, url, score}'
+scripts/multi-web-search search "query" --raw | jq '.engine_status'
 ```
 
 JSON 结构：
