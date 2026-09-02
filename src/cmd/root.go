@@ -113,7 +113,7 @@ func Execute() {
 	searchCmd.Flags().Bool("no-cache", false, "跳过缓存，强制实时搜索")
 
 	rootCmd.Flags().BoolP("version", "v", false, "print version and exit")
-	rootCmd.AddCommand(searchCmd, statusCmd)
+	rootCmd.AddCommand(searchCmd, statusCmd, keyCmd)
 
 	if err := rootCmd.Execute(); err != nil {
 		os.Exit(1)
