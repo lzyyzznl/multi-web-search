@@ -11,3 +11,7 @@ dist/
 # 系统
 .DS_Store
 Thumbs.db
+
+# Python 字节码（不是源码，不入库）
+__pycache__/
+*.pyc
