@@ -4,14 +4,14 @@
 
 ## 支持的引擎
 
-| 引擎 | 环境变量 | 说明 |
+| 引擎名（`--engines` 用） | 环境变量 | 说明 |
 |------|---------|------|
-| Serper (Google) | `SERPER_API_KEY` | Google 搜索结果 |
-| 百度搜索 | `BAIDU_API_KEY` | 中文搜索 |
-| Brave Search | `BRAVE_API_KEY` | 国际/英文内容 |
-| Tavily | `TAVILY_API_KEY` | AI 优化搜索 |
-| 阿里云 IQS | `ALIYUN_IQS_API_KEY` | 智能通用搜索 |
-| Exa | `EXA_API_KEY` | 语义/AI 搜索 |
+| `serper` | `SERPER_API_KEY` | Google 搜索结果 |
+| `baidu` | `BAIDU_API_KEY` | 中文搜索 |
+| `brave` | `BRAVE_API_KEY` | 国际/英文内容 |
+| `tavily` | `TAVILY_API_KEY` | AI 优化搜索 |
+| `aliyun-iqs` | `ALIYUN_IQS_API_KEY` | 智能通用搜索 |
+| `exa` | `EXA_API_KEY` | 语义/AI 搜索 |
 
 配置对应的 API Key 后即可使用，无需额外配置。至少需要配置一个引擎。
 
@@ -24,7 +24,9 @@
 | Windows (amd64) | `multi-web-search.exe` |
 | Linux (amd64) | `multi-web-search-linux` |
 
-调用统一入口 `multi-web-search`（按当前平台自动选择对应二进制执行，无 `.exe`/`-linux` 后缀差异）。darwin 暂无分发二进制。
+调用统一入口 `multi-web-search`（按当前平台自动选择对应二进制执行，无 `.exe`/`-linux` 后缀差异）。
+
+二进制缺失时（拷贝丢文件、未携带该平台）自动回落到同目录的 `multi-web-search.py`：纯标准库实现，与二进制**共享缓存 / 熔断文件与输出格式**（同一 query 的输出逐字节一致），可互换使用——唯一差异是 `key add` 需要二进制做平台级环境变量持久化。启动器同时认 release 资产名（`multi-web-search-windows-amd64.exe`、`multi-web-search-linux-amd64`、`multi-web-search-darwin-arm64` 等），从 release 下载后无需改名即可用。darwin 不在仓库携带列表内，需要时从 release 取。
 
 ## 安装
 
@@ -178,7 +180,8 @@ multi-web-search/
 │   └── build.sh
 ├── skills/multi-web-search/ # 技能文档 + 统一入口启动器 + 就地平台二进制
 │   └── scripts/
-│       ├── multi-web-search          # 统一入口（按平台 exec 真身）
+│       ├── multi-web-search          # 统一入口（按平台 exec 真身，缺失时回落 Python）
+│       ├── multi-web-search.py       # Python 回落实现（与 Go 行为对齐）
 │       ├── multi-web-search.exe      # Windows amd64 二进制
 │       └── multi-web-search-linux    # Linux amd64 二进制
 ├── hooks/                   # 生命周期钩子（PATH 注入统一入口目录）

@@ -15,7 +15,7 @@ description: 多引擎搜索聚合，六个引擎并行搜索、自动去重合�
 
 ## 执行
 
-统一入口（跨平台同名，按当前系统自动选择就地二进制）：
+统一入口（跨平台同名，按当前系统自动选择就地二进制，缺失时回落 Python）：
 
 ```bash
 scripts/multi-web-search search "query"          # 搜索
@@ -23,7 +23,14 @@ scripts/multi-web-search status                   # 检查引擎状态
 scripts/multi-web-search --version                # 版本
 ```
 
-`scripts/` 下携带各平台就地二进制（`multi-web-search.exe` Windows / `multi-web-search-linux` Linux），由 `scripts/multi-web-search` 启动器按平台选择执行。darwin 暂无分发二进制。
+实现有两种，启动器自动选择：
+
+| 实现 | 文件 | 说明 |
+|------|------|------|
+| 就地二进制（首选） | `multi-web-search.exe`（Windows）/ `multi-web-search-linux`（Linux） | 随仓库携带；也认 release 资产名（`multi-web-search-windows-amd64.exe` 等） |
+| Python 回落 | `multi-web-search.py` | 二进制缺失时启用，纯标准库、无需安装依赖 |
+
+两种实现**共享同一套磁盘状态**（缓存 / 熔断文件）与输出格式，可互换使用。唯一差异：`key add` 需要平台级环境变量持久化，只有二进制实现；回落实现会提示改用二进制或手动 `export`。
 
 ## 输出格式
 
@@ -37,28 +44,26 @@ scripts/multi-web-search search "query" --raw    # 纯 JSON，管道友好
 | 参数 | 说明 | 默认 |
 |------|------|------|
 | `--num N` | 每个引擎返回条数 | 10 |
-| `--engines a,b` | 只用指定引擎，逗号分隔 | 全部已配置 |
+| `--engines a,b` | 只用指定引擎，逗号分隔（引擎名见下表） | 全部已配置 |
 | `--timeout N` | 整体超时（秒） | 8 |
 | `--no-cache` | 跳过缓存，强制实时搜索 | 关 |
 
 ## 引擎与 API Key
 
-支持的引擎需要对应环境变量：
+| 引擎名（`--engines` 用） | 环境变量 | 说明 |
+|------|---------|------|
+| `serper` | `SERPER_API_KEY` | Serper (Google) |
+| `baidu` | `BAIDU_API_KEY` | 百度千帆 AI 搜索 |
+| `brave` | `BRAVE_API_KEY` | Brave Search |
+| `tavily` | `TAVILY_API_KEY` | Tavily |
+| `aliyun-iqs` | `ALIYUN_IQS_API_KEY` | 阿里云信息查询服务 IQS |
+| `exa` | `EXA_API_KEY` | Exa |
 
-| 引擎 | 环境变量 |
-|------|---------|
-| Serper (Google) | `SERPER_API_KEY` |
-| 百度搜索 | `BAIDU_API_KEY` |
-| Brave Search | `BRAVE_API_KEY` |
-| Tavily | `TAVILY_API_KEY` |
-| 阿里云 IQS | `ALIYUN_IQS_API_KEY` |
-| Exa | `EXA_API_KEY` |
-
-至少需要配置一个引擎。代理自动检测：已配置本地代理（Windows 注册表 / Linux 常见端口）时自动走代理，否则直连。
+至少需要配置一个引擎。代理自动检测：已配置本地代理（Windows 注册表 / Linux 常见端口）时自动走代理，否则直连；`MULTI_WEB_SEARCH_NO_PROXY=1` 强制直连。
 
 ## 输出解析
 
-建议使用 `--raw` 获取纯 JSON 解析：
+建议使用 `--raw` 获取 JSON 解析：
 
 ```bash
 scripts/multi-web-search search "query" --raw | jq '.results[] | {title, url, score}'
@@ -70,11 +75,15 @@ JSON 结构：
 {
   "query": "...",
   "meta": { "total_raw": N, "total_unique": N, "duration_ms": N },
-  "engine_status": { "engine_name": { "status": "ok|error", "results": N, "latency_ms": N } },
-  "results": [{ "title": "...", "url": "...", "snippet": "...", "source": "engine", "score": N }]
+  "engine_status": { "engine_name": { "status": "ok|error|circuit_open", "results": N, "latency_ms": N, "error": "..." } },
+  "results": [{ "title": "...", "url": "...", "snippet": "...", "source": "engine", "score": N,
+                "engine_scores": { "engine": N } }]
 }
 ```
 
-## 熔断
+缓存命中时 `engine_status` 为 `null`、`duration_ms` 为 0。
 
-每个引擎独立熔断。429/403 或连续失败超过阈值后自动熔断 24 小时，到期自动恢复。用 `status` 命令查看状态。
+## 熔断与缓存
+
+- 每引擎独立熔断：429/403 立即熔断 24 小时；5xx/网络/超时连续 3 次熔断 24 小时，到期自动恢复。用 `status` 查看。
+- 结果缓存 15 分钟于 `~/.cache/multi-web-search/`（按 query 哈希），熔断状态在 `~/.config/multi-web-search/circuit.json`。

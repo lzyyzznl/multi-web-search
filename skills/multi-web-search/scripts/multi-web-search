@@ -1,21 +1,33 @@
 #!/usr/bin/env bash
-# multi-web-search 统一入口：按当前平台选择就地二进制执行。
-# Windows 真身必须是 .exe（git-bash/cmd 均要求），Linux 真身为 ELF；
-# 平台差异由此脚本屏蔽，技能内统一调用 ./multi-web-search。
+# multi-web-search 统一入口：按平台选择就地二进制执行；二进制缺失时回落到 Python 实现。
+# Windows 真身必须是 .exe（git-bash/cmd 均要求），Linux 真身为 ELF；平台差异由此脚本屏蔽，
+# 技能内统一调用 ./multi-web-search。若目录里只有 Python 实现，则直接跑它（见 SKILL.md）。
 set -euo pipefail
 
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 case "$(uname -s)" in
-  MINGW*|MSYS*|CYGWIN*) BIN="$DIR/multi-web-search.exe" ;;
-  Linux)                BIN="$DIR/multi-web-search-linux" ;;
-  Darwin)               BIN="$DIR/multi-web-search-darwin" ;;
-  *) echo "multi-web-search: 不支持的平台: $(uname -s)" >&2; exit 1 ;;
+  MINGW*|MSYS*|CYGWIN*) CANDIDATES=("multi-web-search.exe" "multi-web-search-windows-amd64.exe") ;;
+  Linux)                CANDIDATES=("multi-web-search-linux" "multi-web-search-linux-amd64" "multi-web-search-linux-arm64") ;;
+  Darwin)               CANDIDATES=("multi-web-search-darwin" "multi-web-search-darwin-arm64" "multi-web-search-darwin-amd64") ;;
+  *)                    CANDIDATES=() ;;
 esac
 
-if [ ! -f "$BIN" ]; then
-  echo "multi-web-search: 缺少当前平台二进制 $BIN" >&2
-  exit 1
+# 兼容两种落地名：仓库携带名（multi-web-search.exe / -linux）与 release 资产名（-windows-amd64.exe 等）
+for name in ${CANDIDATES[@]+"${CANDIDATES[@]}"}; do
+  if [ -n "$name" ] && [ -f "$DIR/$name" ]; then
+    exec "$DIR/$name" "$@"
+  fi
+done
+
+PY="${MWS_PYTHON:-python}"
+command -v "$PY" >/dev/null 2>&1 || PY=python3
+if command -v "$PY" >/dev/null 2>&1 && [ -f "$DIR/multi-web-search.py" ]; then
+  exec "$PY" "$DIR/multi-web-search.py" "$@"
 fi
 
-exec "$BIN" "$@"
+echo "multi-web-search: 找不到可用实现：无平台二进制，也无 python 回落脚本" >&2
+echo "  请把 release 资产下载到 $DIR 并重命名，例如：" >&2
+echo "    multi-web-search-windows-amd64.exe → multi-web-search.exe" >&2
+echo "    multi-web-search-linux-amd64       → multi-web-search-linux" >&2
+exit 1
