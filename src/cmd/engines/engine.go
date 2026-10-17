@@ -13,6 +13,7 @@ type SearchResult struct {
 	Snippet      string             `json:"snippet"`
 	Source       string             `json:"source"`
 	Score        float64            `json:"score"`
+	Date         string             `json:"date,omitempty"`
 	EngineScores map[string]float64 `json:"engine_scores,omitempty"`
 }
 

@@ -1,6 +1,6 @@
 ---
 name: multi-web-search
-description: 多引擎搜索聚合，六个引擎并行搜索、自动去重合并排序。适用于需要多源聚合、国内可访问搜索、指定引擎搜索的场景。
+description: 多引擎搜索聚合，七个引擎并行搜索、自动去重合并排序，支持 DeepSeek 网页抓取（fetch）。适用于需要多源聚合、国内可访问搜索、指定引擎搜索的场景。
 ---
 
 # Multi Web Search
@@ -19,6 +19,7 @@ description: 多引擎搜索聚合，六个引擎并行搜索、自动去重合�
 
 ```bash
 scripts/multi-web-search search "query"          # 搜索
+scripts/multi-web-search fetch "https://..."     # DeepSeek Fetch 网页抓取（Markdown 正文）
 scripts/multi-web-search status                   # 检查引擎状态
 scripts/multi-web-search --version                # 版本
 ```
@@ -58,6 +59,18 @@ scripts/multi-web-search search "query" --raw    # 纯 JSON，管道友好
 | `tavily` | `TAVILY_API_KEY` | Tavily |
 | `aliyun-iqs` | `ALIYUN_IQS_API_KEY` | 阿里云信息查询服务 IQS |
 | `exa` | `EXA_API_KEY` | Exa |
+| `deepseek` | `DEEPSEEK_API_KEY` | DeepSeek 搜索，兼网页抓取 |
+
+### 网页抓取 Fetch
+
+DeepSeek Fetch 接口抓取任意网页正文（Markdown），适合搜索结果落地页快速取全文：
+
+```bash
+scripts/multi-web-search fetch "https://example.com/article"     # 打印 Markdown 正文
+scripts/multi-web-search fetch "https://example.com/article" --json  # {url, title, content}
+```
+
+需 `DEEPSEEK_API_KEY`。
 
 至少需要配置一个引擎。代理自动检测：已配置本地代理（Windows 注册表 / Linux 常见端口）时自动走代理，否则直连；`MULTI_WEB_SEARCH_NO_PROXY=1` 强制直连。
 

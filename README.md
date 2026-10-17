@@ -12,6 +12,7 @@
 | `tavily` | `TAVILY_API_KEY` | AI 优化搜索 |
 | `aliyun-iqs` | `ALIYUN_IQS_API_KEY` | 智能通用搜索 |
 | `exa` | `EXA_API_KEY` | 语义/AI 搜索 |
+| `deepseek` | `DEEPSEEK_API_KEY` | DeepSeek 搜索 + 网页抓取 |
 
 配置对应的 API Key 后即可使用，无需额外配置。至少需要配置一个引擎。
 
@@ -82,6 +83,10 @@ multi-web-search search "量子计算" --raw | jq '.results[] | {title, url, sco
 
 # 指定引擎 + 条数 + 跳过缓存
 multi-web-search search "Rust" --engines serper,exa --num 5 --no-cache
+
+# 网页抓取正文（DeepSeek Fetch API，需 DEEPSEEK_API_KEY）
+multi-web-search fetch "https://example.com/article"     # 输出 Markdown 正文
+multi-web-search fetch "https://example.com/article" --json  # {url, title, content}
 
 # 自定义整体超时（秒）
 multi-web-search search "大模型" --timeout 15

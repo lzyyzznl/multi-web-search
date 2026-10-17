@@ -46,6 +46,7 @@ ENV_VAR_MAP = {
     "tavily": "TAVILY_API_KEY",
     "aliyun-iqs": "ALIYUN_IQS_API_KEY",
     "exa": "EXA_API_KEY",
+    "deepseek": "DEEPSEEK_API_KEY",
 }
 
 # 引擎名 → 排序权重（与 src/cmd/merge.go 一致）
@@ -53,13 +54,14 @@ ENGINE_WEIGHT = {
     "serper": 1.0,
     "brave": 0.9,
     "exa": 0.9,
+    "deepseek": 0.9,
     "tavily": 0.85,
     "baidu": 0.8,
     "aliyun-iqs": 0.75,
 }
 
 # 引擎名 → 单次 HTTP 超时秒数（与各 engine 的 http.Client.Timeout 一致）
-ENGINE_TIMEOUT = {"serper": 15, "brave": 15, "baidu": 20, "tavily": 30, "aliyun-iqs": 30, "exa": 20}
+ENGINE_TIMEOUT = {"serper": 15, "brave": 15, "baidu": 20, "tavily": 30, "aliyun-iqs": 30, "exa": 20, "deepseek": 20}
 
 SEARCH_TIMEOUT = 8  # 整体超时（src/cmd/search.go searchTimeout）
 DEFAULT_NUM = 10  # 每引擎默认条数
@@ -174,9 +176,14 @@ def opener() -> urllib.request.OpenerDirector:
     global _PROXY_OPENER
     if _PROXY_OPENER is None:
         proxy = detect_proxy()
-        handler = urllib.request.ProxyHandler({"http": proxy, "https": proxy} if proxy
-                                             else {"http": None, "https": None})
-        _PROXY_OPENER = urllib.request.build_opener(handler)
+        if proxy:
+            handler = urllib.request.ProxyHandler({"http": proxy, "https": proxy})
+            _PROXY_OPENER = urllib.request.build_opener(handler)
+        else:
+            # 空映射：不安装任何 *_open 代理处理器，直连。
+            # 注意不能用 {"http": None, ...}，urllib 会为每个 key 装上 *_open 处理器，
+            # proxy_open 内 _parse_proxy(None) 直接 TypeError。
+            _PROXY_OPENER = urllib.request.build_opener(urllib.request.ProxyHandler({}))
     return _PROXY_OPENER
 
 
@@ -198,7 +205,7 @@ def http_error_text(engine: str, exc: urllib.error.HTTPError) -> str:
     return f"{engine}: HTTP {exc.code}: {detail}"
 
 
-# ------------------------------------------------------------------ 六个引擎
+# ------------------------------------------------------------------ 七个引擎
 
 
 def _rows(items, title_key, url_key, snippet_key, source, score_key=None, score_fn=None) -> list[dict]:
@@ -330,6 +337,63 @@ def search_exa(query: str, num: int) -> list[dict]:
                  score_fn=lambda i: max(0.1, 0.8 - 0.05 * i))
 
 
+def search_deepseek(query: str, num: int) -> list[dict]:
+    """DeepSeek Search 接口（与 src/cmd/engines/deepseek.go 对齐）。
+
+    snippet（短摘要）优先，缺失时回退到 summary（正文级内容）；
+    rerank_score 取值 0～3，归一化到 0～1；date 仅在非空时写入，保证与 Go 输出逐字节一致。
+    """
+    key = os.environ.get(ENV_VAR_MAP["deepseek"], "")
+    if not key:
+        raise EngineError("deepseek: API Key 未配置")
+    body = {"query": query, "count": num, "need_content": False}
+    try:
+        data = http_json("https://api.deepseek.com/v1/tools/search",
+                         headers={"Authorization": f"Bearer {key}"},
+                         body=body, timeout=ENGINE_TIMEOUT["deepseek"])
+    except urllib.error.HTTPError as exc:
+        raise EngineError(http_error_text("deepseek", exc)) from None
+    except Exception as exc:
+        raise EngineError(f"deepseek: {exc}") from None
+    results = []
+    for item in data.get("results") or []:
+        link = (item.get("url") or "").strip()
+        if not link:
+            continue
+        try:
+            score = min(1.0, max(0.0, float(item.get("rerank_score") or 0) / 3.0))
+        except (TypeError, ValueError):
+            score = 0.0
+        summary = (item.get("summary") or "").strip()
+        snippet = (item.get("snippet") or "").strip()
+        date = (item.get("date") or "").strip()
+        row = {"title": (item.get("title") or "").strip(), "url": link,
+               "snippet": snippet or summary, "source": "deepseek", "score": score}
+        if date:
+            row["date"] = date
+        results.append(row)
+    return results
+
+
+FETCH_TIMEOUT = 30  # src/cmd/fetch.go 中 deepseek fetch 客户端超时
+
+
+def fetch_page(url: str) -> dict:
+    """DeepSeek Fetch 接口：抓取单页 Markdown 正文（与 src/cmd/fetch.go 对齐）。"""
+    key = os.environ.get(ENV_VAR_MAP["deepseek"], "")
+    if not key:
+        raise SystemExit(f"deepseek: API Key 未配置 ({ENV_VAR_MAP['deepseek']})")
+    body = {"url": url}
+    try:
+        return http_json("https://api.deepseek.com/v1/tools/fetch",
+                         headers={"Authorization": f"Bearer {key}"},
+                         body=body, timeout=FETCH_TIMEOUT)
+    except urllib.error.HTTPError as exc:
+        raise SystemExit(http_error_text("deepseek fetch", exc)) from None
+    except Exception as exc:
+        raise SystemExit(f"deepseek fetch: {exc}") from None
+
+
 ENGINES = {
     "serper": search_serper,
     "baidu": search_baidu,
@@ -337,6 +401,7 @@ ENGINES = {
     "tavily": search_tavily,
     "aliyun-iqs": search_aliyun_iqs,
     "exa": search_exa,
+    "deepseek": search_deepseek,
 }
 
 
@@ -700,6 +765,10 @@ def build_parser() -> argparse.ArgumentParser:
 
     sub.add_parser("status")
 
+    fetch = sub.add_parser("fetch")
+    fetch.add_argument("url")
+    fetch.add_argument("--json", action="store_true")
+
     key = sub.add_parser("key")
     key_sub = key.add_subparsers(dest="key_command")
     key_add = key_sub.add_parser("add")
@@ -736,6 +805,17 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     if args.command == "status":
         return cmd_status()
+    if args.command == "fetch":
+        page = fetch_page(args.url)
+        if args.json:
+            dump_json({"url": args.url, "title": page.get("title", ""),
+                       "content": page.get("content", "")})
+        else:
+            title = (page.get("title") or "").strip()
+            if title:
+                print(f"# {title}")
+            print(page.get("content") or "")
+        return 0
     if args.command == "key":
         return cmd_key(args)
     parser.print_help()

@@ -12,6 +12,7 @@
 | Tavily | `TAVILY_API_KEY` |
 | 阿里云 IQS | `ALIYUN_IQS_API_KEY` |
 | Exa | `EXA_API_KEY` |
+| DeepSeek | `DEEPSEEK_API_KEY` | Search / Fetch |
 
 ## 使用
 

@@ -30,6 +30,8 @@ func callEngine(ctx context.Context, name, query string, num int) ([]engines.Sea
 		engine = engines.NewAliyunIQS(apiKey)
 	case "exa":
 		engine = engines.NewExa(apiKey)
+	case "deepseek":
+		engine = engines.NewDeepSeek(apiKey)
 	default:
 		return nil, fmt.Errorf("未知引擎: %s", name)
 	}

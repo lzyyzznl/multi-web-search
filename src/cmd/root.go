@@ -11,7 +11,7 @@ import (
 
 var rootCmd = &cobra.Command{
 	Use:   "multi-web-search",
-	Short: "多引擎搜索聚合 — Serper/Baidu/Brave/Tavily/阿里云IQS/Exa",
+	Short: "多引擎搜索聚合 — Serper/Baidu/Brave/Tavily/阿里云IQS/Exa/DeepSeek",
 }
 
 var searchCmd = &cobra.Command{
@@ -112,8 +112,10 @@ func Execute() {
 	searchCmd.Flags().Int("timeout", 0, "整体超时秒数（默认 8）")
 	searchCmd.Flags().Bool("no-cache", false, "跳过缓存，强制实时搜索")
 
+	fetchCmd.Flags().Bool("json", false, "JSON 格式输出")
+
 	rootCmd.Flags().BoolP("version", "v", false, "print version and exit")
-	rootCmd.AddCommand(searchCmd, statusCmd, keyCmd)
+	rootCmd.AddCommand(searchCmd, statusCmd, fetchCmd, keyCmd)
 
 	if err := rootCmd.Execute(); err != nil {
 		os.Exit(1)
