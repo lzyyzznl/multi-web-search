@@ -70,6 +70,8 @@ func parseDeepSeekResults(body io.Reader) ([]SearchResult, error) {
 			Snippet     string  `json:"snippet"`
 			Summary     string  `json:"summary"`
 			Date        string  `json:"date"`
+			SiteName    string  `json:"site_name"`
+			Authority   *int    `json:"authority"`
 		} `json:"results"`
 	}
 	if err := json.NewDecoder(body).Decode(&data); err != nil {
@@ -92,13 +94,24 @@ func parseDeepSeekResults(body io.Reader) ([]SearchResult, error) {
 			score = 0
 		}
 		results = append(results, SearchResult{
-			Title:   r.Title,
-			URL:     r.URL,
-			Snippet: snippet,
-			Source:  "deepseek",
-			Score:   score,
-			Date:    r.Date,
+			Title:     r.Title,
+			URL:       r.URL,
+			Snippet:   snippet,
+			Source:    "deepseek",
+			Score:     score,
+			Date:      r.Date,
+			SiteName:  r.SiteName,
+			Authority: authorityOrNil(r.Authority),
 		})
 	}
 	return results, nil
+}
+
+// authorityOrNil 返回非负权威性；未提供或未知(-1)时返回 nil（序列化时省略）.
+func authorityOrNil(a *int) *int {
+	if a == nil || *a < 0 {
+		return nil
+	}
+	v := *a
+	return &v
 }

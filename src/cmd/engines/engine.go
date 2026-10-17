@@ -8,12 +8,17 @@ import (
 
 // SearchResult 单条搜索结果.
 type SearchResult struct {
-	Title        string             `json:"title"`
-	URL          string             `json:"url"`
-	Snippet      string             `json:"snippet"`
-	Source       string             `json:"source"`
-	Score        float64            `json:"score"`
-	Date         string             `json:"date,omitempty"`
+	Title   string  `json:"title"`
+	URL     string  `json:"url"`
+	Snippet string  `json:"snippet"`
+	Source  string  `json:"source"`
+	Score   float64 `json:"score"`
+	Date    string  `json:"date,omitempty"`
+	// 以下两字段仅 DeepSeek 引擎填充（其他引擎省略，保持输出兼容）。
+	// authority：0～4 权威性（≥3 极权威），未知(-1)或缺失时不输出。
+	SiteName  string `json:"site_name,omitempty"`
+	Authority *int   `json:"authority,omitempty"`
+
 	EngineScores map[string]float64 `json:"engine_scores,omitempty"`
 }
 

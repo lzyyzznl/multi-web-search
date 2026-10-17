@@ -84,6 +84,9 @@ multi-web-search search "量子计算" --raw | jq '.results[] | {title, url, sco
 # 指定引擎 + 条数 + 跳过缓存
 multi-web-search search "Rust" --engines serper,exa --num 5 --no-cache
 
+# DeepSeek 支持 site:/lang:/after:/before: 等搜索语法（透传给搜索服务）
+multi-web-search search 'DeepSeek V4 site:github.com lang:zh after:2025' --engines deepseek
+
 # 网页抓取正文（DeepSeek Fetch API，需 DEEPSEEK_API_KEY）
 multi-web-search fetch "https://example.com/article"     # 输出 Markdown 正文
 multi-web-search fetch "https://example.com/article" --json  # {url, title, content}
@@ -174,8 +177,9 @@ multi-web-search/
 ├── .codex-plugin/           # Codex 插件配置
 ├── src/                     # Go 源码
 │   ├── cmd/
-│   │   ├── root.go          # CLI 入口（search + status）
+│   │   ├── root.go          # CLI 入口（search + fetch + status）
 │   │   ├── search.go        # 全并行编排器
+│   │   ├── fetch.go         # DeepSeek Fetch 网页抓取
 │   │   ├── merge.go         # URL 去重 + 排序
 │   │   ├── circuit.go       # 熔断器
 │   │   ├── env.go           # API Key 自动检测

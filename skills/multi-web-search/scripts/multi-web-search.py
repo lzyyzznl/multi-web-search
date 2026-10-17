@@ -341,7 +341,8 @@ def search_deepseek(query: str, num: int) -> list[dict]:
     """DeepSeek Search 接口（与 src/cmd/engines/deepseek.go 对齐）。
 
     snippet（短摘要）优先，缺失时回退到 summary（正文级内容）；
-    rerank_score 取值 0～3，归一化到 0～1；date 仅在非空时写入，保证与 Go 输出逐字节一致。
+    rerank_score 取值 0～3，归一化到 0～1；date/site_name 仅在非空时写入，
+    authority 未知(-1)或缺失时不写，保证与 Go 输出逐字节一致。
     """
     key = os.environ.get(ENV_VAR_MAP["deepseek"], "")
     if not key:
@@ -371,6 +372,13 @@ def search_deepseek(query: str, num: int) -> list[dict]:
                "snippet": snippet or summary, "source": "deepseek", "score": score}
         if date:
             row["date"] = date
+        # site_name / authority 与 Go SearchResult 字段同序（date 之后）
+        site_name = (item.get("site_name") or "").strip()
+        if site_name:
+            row["site_name"] = site_name
+        authority = item.get("authority")
+        if isinstance(authority, int) and not isinstance(authority, bool) and authority >= 0:
+            row["authority"] = authority
         results.append(row)
     return results
 

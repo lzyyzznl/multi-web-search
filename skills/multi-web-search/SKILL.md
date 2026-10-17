@@ -72,6 +72,24 @@ scripts/multi-web-search fetch "https://example.com/article" --json  # {url, tit
 
 需 `DEEPSEEK_API_KEY`。
 
+### DeepSeek 搜索语法
+
+`deepseek` 引擎的 query 支持以下操作符（原样透传给 DeepSeek 搜索服务，多引擎搜索时其他引擎会忽略/当作普通词）：
+
+| 操作符 | 示例 | 作用 |
+|--------|------|------|
+| `site:` / `-site:` | `DeepSeek site:github.com` | 限定/排除站点（多个用空格分隔，`OR` 连接） |
+| `"..."` / `-\"...\"` | `DeepSeek "精确短语"` | 精确匹配/排除短语 |
+| `-词` | `DeepSeek -广告` | 排除含该词的网页 |
+| `lang:` | `DeepSeek lang:zh,en` | 限定语言 |
+| `after:` / `before:` | `DeepSeek after:2025-01-01` | 限定发布时间范围 |
+
+```bash
+scripts/multi-web-search search 'DeepSeek V4 site:github.com OR site:huggingface.co lang:zh after:2025' --engines deepseek
+```
+
+另外，DeepSeek 结果的 JSON 会额外带两个字段（其他引擎没有）：`site_name`（站点名）与 `authority`（0～4 权威性，≥3 为极权威；未知时不输出）。
+
 至少需要配置一个引擎。代理自动检测：已配置本地代理（Windows 注册表 / Linux 常见端口）时自动走代理，否则直连；`MULTI_WEB_SEARCH_NO_PROXY=1` 强制直连。
 
 ## 输出解析
