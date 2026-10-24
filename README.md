@@ -72,7 +72,7 @@ git clone git@github.com:lzyyzznl/multi-web-search.git ~/.agents/plugins/multi-w
 ## 使用
 
 ```bash
-# 搜索（默认漂亮输出）
+# 搜索（默认漂亮输出；DeepSeek 为主引擎，结果优先展示）
 multi-web-search search "Rust 异步编程"
 
 # JSON 格式
@@ -83,6 +83,12 @@ multi-web-search search "量子计算" --raw | jq '.results[] | {title, url, sco
 
 # 指定引擎 + 条数 + 跳过缓存
 multi-web-search search "Rust" --engines serper,exa --num 5 --no-cache
+
+# 只用辅助引擎做交叉验证/发散（排除主引擎 deepseek）
+multi-web-search search "Rust" --engines aux --raw
+
+# 关闭主引擎优先（纯多引擎评分排序）
+multi-web-search search "Rust" --primary ""
 
 # DeepSeek 支持 site:/lang:/after:/before: 等搜索语法（透传给搜索服务）
 multi-web-search search 'DeepSeek V4 site:github.com lang:zh after:2025' --engines deepseek
@@ -103,17 +109,18 @@ multi-web-search status
 | 参数 | 说明 | 默认 |
 |------|------|------|
 | `--num N` | 每个引擎返回条数 | 10 |
-| `--engines a,b` | 只用指定引擎（逗号分隔） | 全部已配置 |
+| `--engines a,b` | 只用指定引擎（逗号分隔）；`all`=全部，`aux`=除主引擎外 | 全部已配置 |
+| `--primary NAME` | 主引擎：结果优先排序并标记 `primary`；`""` 关闭 | `deepseek` |
 | `--timeout N` | 整体超时（秒），超时引擎标记失败 | 8 |
 | `--no-cache` | 跳过磁盘缓存，强制实时搜索 | 关 |
 | `--json` / `--raw` | JSON 输出 | 漂亮输出 |
 
-结果默认缓存 15 分钟（按 query 哈希存于 `~/.cache/multi-web-search/`），相同 query 重复搜索直接命中缓存，节省付费 API 调用。
+结果默认缓存 15 分钟（按 query + 引擎集合 + 主引擎 + 条数的签名哈希存于 `~/.cache/multi-web-search/`），相同参数重复搜索直接命中缓存，节省付费 API 调用。
 
 ### 输出示例
 
 ```
-搜索 "Rust 异步编程" — 来自 5 个引擎
+搜索 "Rust 异步编程" — 主引擎 deepseek — 来自 6 个引擎
 
   ✅ serper      (10 条, 1680ms)
   ✅ baidu       (10 条, 933ms)
@@ -123,7 +130,7 @@ multi-web-search status
 
   1. 16 Rust学习笔记-异步编程(async/await/Future)
      https://zhuanlan.zhihu.com/p/611587154
-     async/await 是 Rust 的异步编程模型...  [0.77 | tavily]
+     async/await 是 Rust 的异步编程模型...  [0.78 | deepseek ★ | 2源]
 
   2. GitHub - rustcn-org/async-book
      https://github.com/rustcn-org/async-book
@@ -133,8 +140,18 @@ multi-web-search status
   📊 50 条原始结果，去重后 37 条唯一结果 (1.68s)
 ```
 
+## 主引擎（DeepSeek）
+
+默认 `--primary deepseek`：DeepSeek 搜索为主，其余六个引擎为辅助。
+
+- 主引擎结果恒排在辅助引擎独有结果之前，并带 `"primary": true`。
+- 同一 URL 被多引擎命中时，保留主引擎的标题/摘要/`site_name`/`authority`，同时累计 `engine_scores`；命中引擎数 >1 时输出 `"agreement": N`，作为交叉验证信号。
+- 网页抓取统一走 DeepSeek Fetch（`fetch` 命令），不依赖其他抓取后端。
+- 未配置 `DEEPSEEK_API_KEY` 时自动降级为普通多引擎聚合（响应不含 `primary` 字段）。
+
 ## 特性
 
+- **主引擎优先** — DeepSeek 结果优先排序，辅助引擎用于交叉验证与发散补全
 - **全并行** — goroutine 同时调用所有可用引擎，互不影响
 - **自动发现** — 自动检测环境变量中的 API Key
 - **代理自动检测** — 二进制内嵌：已设 `HTTPS_PROXY` 沿用；Windows 读注册表代理（`ProxyEnable`/`ProxyServer`，支持 `http=...;https=...` 多协议格式）并验证端口监听；Linux/macOS 探测常见本地代理端口（`10808/10809/7890/7897/1080/8081/8888`）。检测到可用代理自动注入 `HTTPS_PROXY` 走代理，无代理直连。`MULTI_WEB_SEARCH_NO_PROXY=1` 可强制直连。适合 Brave 等直连被墙的引擎。

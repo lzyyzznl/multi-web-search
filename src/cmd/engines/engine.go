@@ -19,6 +19,11 @@ type SearchResult struct {
 	SiteName  string `json:"site_name,omitempty"`
 	Authority *int   `json:"authority,omitempty"`
 
+	// Primary 标记该结果由主引擎返回：排序时恒在辅助引擎独有结果之前。
+	Primary bool `json:"primary,omitempty"`
+	// Agreement 返回该 URL 的引擎去重数量，>1 才输出（多引擎互证信号）。
+	Agreement int `json:"agreement,omitempty"`
+
 	EngineScores map[string]float64 `json:"engine_scores,omitempty"`
 }
 

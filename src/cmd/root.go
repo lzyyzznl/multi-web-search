@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"sort"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -25,12 +26,14 @@ var searchCmd = &cobra.Command{
 		enginesFlag, _ := cmd.Flags().GetStringSlice("engines")
 		timeoutSec, _ := cmd.Flags().GetInt("timeout")
 		noCache, _ := cmd.Flags().GetBool("no-cache")
+		primary, _ := cmd.Flags().GetString("primary")
 		query := args[0]
 
 		opts := SearchOptions{
 			Num:     num,
 			Engines: enginesFlag,
 			NoCache: noCache,
+			Primary: primary,
 		}
 		if timeoutSec > 0 {
 			opts.Timeout = time.Duration(timeoutSec) * time.Second
@@ -58,18 +61,28 @@ var statusCmd = &cobra.Command{
 	Short: "查看各搜索引擎配额/熔断状态",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		fmt.Println("🔍 搜索引擎状态")
-		for name, env := range envVarMap {
+		names := make([]string, 0, len(envVarMap))
+		for name := range envVarMap {
+			names = append(names, name)
+		}
+		sort.Strings(names)
+		for _, name := range names {
+			env := envVarMap[name]
 			key := os.Getenv(env)
 			if key == "" {
 				fmt.Printf("  ❌ %-12s 未配置 (%s)\n", name, env)
 				continue
 			}
+			marker := ""
+			if name == defaultPrimary {
+				marker = "（主引擎）"
+			}
 			cb := NewCircuitBreaker(name)
 			status := cb.Status()
 			if status == "ok" {
-				fmt.Printf("  ✅ %-12s 已配置，状态正常\n", name)
+				fmt.Printf("  ✅ %-12s 已配置，状态正常%s\n", name, marker)
 			} else {
-				fmt.Printf("  ⚠️  %-12s %s\n", name, status)
+				fmt.Printf("  ⚠️  %-12s %s%s\n", name, status, marker)
 			}
 		}
 		return nil
@@ -77,7 +90,11 @@ var statusCmd = &cobra.Command{
 }
 
 func printPretty(resp *SearchResponse) {
-	fmt.Printf("\n搜索 \"%s\" — 来自 %d 个引擎\n\n", resp.Query, len(resp.EngineStatus))
+	if resp.Primary != "" {
+		fmt.Printf("\n搜索 \"%s\" — 主引擎 %s — 来自 %d 个引擎\n\n", resp.Query, resp.Primary, len(resp.EngineStatus))
+	} else {
+		fmt.Printf("\n搜索 \"%s\" — 来自 %d 个引擎\n\n", resp.Query, len(resp.EngineStatus))
+	}
 
 	for name, s := range resp.EngineStatus {
 		switch s.Status {
@@ -96,7 +113,14 @@ func printPretty(resp *SearchResponse) {
 		snippet := truncateRunes(r.Snippet, maxSnippetRunes)
 		fmt.Printf("  %d. %s\n", i+1, r.Title)
 		fmt.Printf("     %s\n", r.URL)
-		fmt.Printf("     %s  [%.2f | %s]\n", snippet, r.Score, r.Source)
+		source := r.Source
+		if r.Primary {
+			source += " ★"
+		}
+		if r.Agreement > 1 {
+			source += fmt.Sprintf(" %d源", r.Agreement)
+		}
+		fmt.Printf("     %s  [%.2f | %s]\n", snippet, r.Score, source)
 		fmt.Println()
 	}
 
@@ -108,7 +132,8 @@ func Execute() {
 	searchCmd.Flags().Bool("json", false, "JSON 格式输出")
 	searchCmd.Flags().Bool("raw", false, "jq 友好 JSON")
 	searchCmd.Flags().Int("num", 0, "每个引擎返回的条数（默认 10）")
-	searchCmd.Flags().StringSlice("engines", nil, "只用指定引擎，逗号分隔（如 serper,baidu）")
+	searchCmd.Flags().StringSlice("engines", nil, "只用指定引擎，逗号分隔（如 serper,baidu）；all=全部，aux=除主引擎外的辅助引擎")
+	searchCmd.Flags().String("primary", defaultPrimary, "主引擎（默认 deepseek）；传空字符串关闭主引擎优先")
 	searchCmd.Flags().Int("timeout", 0, "整体超时秒数（默认 8）")
 	searchCmd.Flags().Bool("no-cache", false, "跳过缓存，强制实时搜索")
 

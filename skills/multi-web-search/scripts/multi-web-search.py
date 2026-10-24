@@ -65,6 +65,10 @@ ENGINE_TIMEOUT = {"serper": 15, "brave": 15, "baidu": 20, "tavily": 30, "aliyun-
 
 SEARCH_TIMEOUT = 8  # 整体超时（src/cmd/search.go searchTimeout）
 DEFAULT_NUM = 10  # 每引擎默认条数
+DEFAULT_PRIMARY = "deepseek"  # 默认主引擎（与 src/cmd/search.go defaultPrimary 一致）
+# 结果字段顺序（与 Go SearchResult struct tag 顺序一致，保证 JSON 逐字节对齐）
+RESULT_FIELD_ORDER = ("title", "url", "snippet", "source", "score", "date", "site_name",
+                      "authority", "primary", "agreement", "engine_scores")
 CACHE_TTL = 15 * 60  # 缓存有效期
 MAX_CONSECUTIVE_FAILURES = 3  # 瞬时错误熔断阈值
 CIRCUIT_OPEN_HOURS = 24  # 熔断时长
@@ -417,6 +421,18 @@ def enabled_engines() -> list[str]:
     return sorted(name for name, env in ENV_VAR_MAP.items() if os.environ.get(env))
 
 
+def resolve_engines(candidates: list[str], requested: list[str], primary: str) -> list[str]:
+    """解析引擎集合：all=全部已配置，aux=除主引擎外的辅助引擎，其余按名匹配（对齐 resolveEngines）。"""
+    if not requested:
+        return sorted(candidates)
+    if "all" in requested:
+        return sorted(candidates)
+    want_aux = "aux" in requested
+    wanted = {name for name in requested if name not in ("all", "aux")}
+    return sorted(name for name in candidates
+                  if name in wanted or (want_aux and name != primary))
+
+
 # ------------------------------------------------------------------ 去重排序
 
 
@@ -440,8 +456,32 @@ def normalize_url(raw_url: str) -> str:
     return f"https://{host}{path}" + (f"?{query}" if query else "")
 
 
-def merge_results(all_results: list[list[dict]]) -> list[dict]:
-    """按归一化 URL 去重；同 URL 取最高分，engine_scores 记录各引擎得分（对齐 merge.go）。"""
+def _go_number(value):
+    """整数值的 float 在 Go encoding/json 里输出为整数（1.0 → 1），这里做同样收敛。"""
+    if isinstance(value, float) and value.is_integer() and abs(value) < 1e21:
+        return int(value)
+    return value
+
+
+def canonical_result(row: dict) -> dict:
+    """按 Go struct tag 顺序重排结果字段，保证与二进制输出逐字节对齐。"""
+    out = {key: row[key] for key in RESULT_FIELD_ORDER if key in row}
+    for key, value in row.items():
+        if key not in out:
+            out[key] = value
+    if "score" in out:
+        out["score"] = _go_number(out["score"])
+    if isinstance(out.get("engine_scores"), dict):
+        out["engine_scores"] = {key: _go_number(value)
+                                for key, value in out["engine_scores"].items()}
+    return out
+
+
+def merge_results(all_results: list[list[dict]], primary: str) -> list[dict]:
+    """按归一化 URL 去重；主引擎记录优先，辅助引擎只贡献 engine_scores/agreement。
+
+    对齐 merge.go：同 URL 取最高分；primary 非空时主引擎结果整体排在辅助引擎独有结果之前。
+    """
     seen: dict[str, dict] = {}
     for results in all_results:
         for item in results:
@@ -449,36 +489,58 @@ def merge_results(all_results: list[list[dict]]) -> list[dict]:
             weight = ENGINE_WEIGHT.get(item["source"], 0.0)
             base = item["score"] if item["score"] > 0 else 0.5
             score = weight * base
-            existing = seen.get(key)
-            if existing is None:
-                merged = dict(item, score=score, engine_scores={item["source"]: score})
-                seen[key] = merged
-                continue
-            if score > existing["score"]:
-                existing["score"] = score
-            existing["engine_scores"][item["source"]] = score
+            entry = seen.get(key)
+            if entry is None:
+                rec = dict(item)
+                rec["score"] = score
+                if primary and item["source"] == primary:
+                    rec["primary"] = True
+                seen[key] = {"rec": rec, "scores": {}}
+                entry = seen[key]
+            elif primary and item["source"] == primary and not entry["rec"].get("primary"):
+                rec = dict(item)
+                rec["primary"] = True
+                rec["score"] = entry["rec"]["score"]
+                entry["rec"] = rec
+            if score > entry["rec"]["score"]:
+                entry["rec"]["score"] = score
+            entry["scores"][item["source"]] = score
+
+    merged = []
     for entry in seen.values():
-        # Go 的 encoding/json 会按 key 排序输出 map，这里在合并阶段就定序
-        entry["engine_scores"] = dict(sorted(entry["engine_scores"].items()))
-    return sorted(seen.values(), key=lambda item: item["score"], reverse=True)
+        rec = entry["rec"]
+        rec["engine_scores"] = dict(sorted(entry["scores"].items()))
+        if len(entry["scores"]) > 1:
+            rec["agreement"] = len(entry["scores"])
+        merged.append(canonical_result(rec))
+    merged.sort(key=lambda item: (not item.get("primary", False), -item["score"],
+                                  -item.get("agreement", 0), item["url"]))
+    return merged
 
 
 # ------------------------------------------------------------------ 缓存
 
 
-def cache_file(query: str) -> Path:
-    return cache_dir() / (hashlib.sha256(query.encode("utf-8")).hexdigest() + ".json")
+def cache_signature(enabled: list[str], primary: str, num: int) -> str:
+    """影响检索结果的参数签名（对齐 Go cacheSignature）：引擎集合|主引擎|条数。"""
+    return ",".join(enabled) + "|" + primary + "|" + str(num if num > 0 else DEFAULT_NUM)
+
+
+def cache_file(query: str, signature: str) -> Path:
+    digest = hashlib.sha256((query + "\x00" + signature).encode("utf-8")).hexdigest()
+    return cache_dir() / (digest + ".json")
 
 
 def _tidy_result(item: dict) -> dict:
-    """把结果的 engine_scores 定序（Go 序列化 map 时按 key 排序）。"""
+    """按 Go 字段顺序重排并定序 engine_scores（Go 序列化 map 时按 key 排序）。"""
+    item = canonical_result(dict(item))
     if isinstance(item.get("engine_scores"), dict):
         item["engine_scores"] = dict(sorted(item["engine_scores"].items()))
     return item
 
 
-def load_cache(query: str) -> dict | None:
-    path = cache_file(query)
+def load_cache(query: str, signature: str) -> dict | None:
+    path = cache_file(query, signature)
     try:
         entry = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
@@ -486,17 +548,24 @@ def load_cache(query: str) -> dict | None:
     cached_at = _parse_rfc3339(entry.get("cached_at", ""))
     if datetime.now(cached_at.tzinfo) - cached_at > timedelta(seconds=CACHE_TTL):
         return None
-    results = [_tidy_result(dict(item)) for item in entry.get("results") or []]
-    return {"query": entry.get("query", query),
-            "meta": {"total_raw": entry.get("raw", 0), "total_unique": len(results),
-                     "duration_ms": 0},
-            "engine_status": None, "results": results}
+    results = [_tidy_result(item) for item in entry.get("results") or []]
+    response = {"query": entry.get("query", query)}
+    if entry.get("primary"):
+        response["primary"] = entry["primary"]
+    response["meta"] = {"total_raw": entry.get("raw", 0), "total_unique": len(results),
+                        "duration_ms": 0}
+    response["engine_status"] = None
+    response["results"] = results
+    return response
 
 
-def save_cache(query: str, response: dict) -> None:
-    entry = {"query": query, "results": response["results"], "raw": response["meta"]["total_raw"],
-             "cached_at": _rfc3339(datetime.now().astimezone())}
-    write_atomic(cache_file(query), json.dumps(entry, ensure_ascii=False))
+def save_cache(query: str, signature: str, response: dict) -> None:
+    entry = {"query": query}
+    if response.get("primary"):
+        entry["primary"] = response["primary"]
+    entry.update({"results": response["results"], "raw": response["meta"]["total_raw"],
+                  "cached_at": _rfc3339(datetime.now().astimezone())})
+    write_atomic(cache_file(query, signature), json.dumps(entry, ensure_ascii=False))
 
 
 # ------------------------------------------------------------------ 熔断
@@ -623,18 +692,18 @@ def is_transient_error(message: str) -> bool:
 # ------------------------------------------------------------------ 搜索编排
 
 
-def do_search(query: str, nums: int, engines: list[str], timeout: int, no_cache: bool) -> dict:
-    if not no_cache:
-        cached = load_cache(query)
-        if cached:
-            return cached
-
-    candidates = enabled_engines()
-    if engines:
-        wanted = set(engines)
-        candidates = [name for name in candidates if name in wanted]
+def do_search(query: str, nums: int, engines: list[str], timeout: int, no_cache: bool,
+              primary: str = DEFAULT_PRIMARY) -> dict:
+    candidates = resolve_engines(enabled_engines(), engines, primary)
     if not candidates:
         raise SystemExit("未检测到任何搜索引擎的 API Key，请至少配置一个环境变量或指定引擎")
+
+    active_primary = primary if primary and primary in candidates else ""
+    signature = cache_signature(candidates, active_primary, nums)
+    if not no_cache:
+        cached = load_cache(query, signature)
+        if cached:
+            return cached
 
     num = nums if nums > 0 else DEFAULT_NUM
     limit = timeout if timeout > 0 else SEARCH_TIMEOUT
@@ -687,17 +756,17 @@ def do_search(query: str, nums: int, engines: list[str], timeout: int, no_cache:
                 engine_status[name] = {"status": "error", "results": 0,
                                        "latency_ms": int(limit * 1000), "error": message}
 
-    merged = merge_results(collected)
-    response = {
-        "query": query,
-        "meta": {"total_raw": sum(status["results"] for status in engine_status.values()),
-                 "total_unique": len(merged),
-                 "duration_ms": int((time.time() - started) * 1000)},
-        "engine_status": engine_status,
-        "results": merged,
-    }
+    merged = merge_results(collected, active_primary)
+    response = {"query": query}
+    if active_primary:
+        response["primary"] = active_primary
+    response["meta"] = {"total_raw": sum(status["results"] for status in engine_status.values()),
+                        "total_unique": len(merged),
+                        "duration_ms": int((time.time() - started) * 1000)}
+    response["engine_status"] = engine_status
+    response["results"] = merged
     if not no_cache:
-        save_cache(query, response)
+        save_cache(query, signature, response)
     return response
 
 
@@ -710,7 +779,10 @@ def truncate(text: str, max_chars: int) -> str:
 
 def print_pretty(response: dict) -> None:
     statuses = response.get("engine_status") or {}
-    print(f'\n搜索 "{response["query"]}" — 来自 {len(statuses)} 个引擎\n')
+    header = f'\n搜索 "{response["query"]}"'
+    if response.get("primary"):
+        header += f' — 主引擎 {response["primary"]}'
+    print(header + f' — 来自 {len(statuses)} 个引擎\n')
     for name, status in statuses.items():
         if status["status"] == "ok":
             print(f"  🔵 {name:<12} ({status['results']} 条, {status['latency_ms']}ms)")
@@ -720,9 +792,14 @@ def print_pretty(response: dict) -> None:
             print(f"  🔴 {name:<12} 失败 ({status['error']})")
     print()
     for index, item in enumerate(response["results"], 1):
+        source = item["source"]
+        if item.get("primary"):
+            source += " ★"
+        if item.get("agreement", 0) > 1:
+            source += f" {item['agreement']}源"
         print(f"  {index}. {item['title']}")
         print(f"     {item['url']}")
-        print(f"     {truncate(item['snippet'], 120)}  [{item['score']:.2f} | {item['source']}]")
+        print(f"     {truncate(item['snippet'], 120)}  [{item['score']:.2f} | {source}]")
         print()
     print(f"  📊 总计 {response['meta']['total_raw']} 条原始结果，"
           f"去重后 {response['meta']['total_unique']} 条唯一结果 "
@@ -737,11 +814,12 @@ def cmd_status() -> int:
         if not key:
             print(f"  ❌ {name:<12} 未配置 ({ENV_VAR_MAP[name]})")
             continue
+        marker = "（主引擎）" if name == DEFAULT_PRIMARY else ""
         text = circuit_status_text(store, name)
         if text == "ok":
-            print(f"  ✅ {name:<12} 已配置，状态正常")
+            print(f"  ✅ {name:<12} 已配置，状态正常{marker}")
         else:
-            print(f"  ⚠️  {name:<12} {text}")
+            print(f"  ⚠️  {name:<12} {text}{marker}")
     return 0
 
 
@@ -768,6 +846,7 @@ def build_parser() -> argparse.ArgumentParser:
     search.add_argument("--raw", action="store_true")
     search.add_argument("--num", type=int, default=0)
     search.add_argument("--engines", action="append", default=[])
+    search.add_argument("--primary", default=DEFAULT_PRIMARY)
     search.add_argument("--timeout", type=int, default=0)
     search.add_argument("--no-cache", action="store_true")
 
@@ -800,12 +879,14 @@ def main(argv: list[str] | None = None) -> int:
         engines: list[str] = []
         for chunk in args.engines:
             engines.extend(part.strip().lower() for part in chunk.split(",") if part.strip())
-        unknown = [name for name in engines if name not in ENV_VAR_MAP]
+        allowed = set(ENV_VAR_MAP) | {"all", "aux"}
+        unknown = [name for name in engines if name not in allowed]
         if unknown:
-            print(f"Error: 未知引擎 {', '.join(unknown)}，可用: {', '.join(sorted(ENV_VAR_MAP))}",
+            print(f"Error: 未知引擎 {', '.join(unknown)}，可用: {', '.join(sorted(allowed))}",
                   file=sys.stderr)
             return 1
-        response = do_search(args.query, args.num, engines, args.timeout, args.no_cache)
+        response = do_search(args.query, args.num, engines, args.timeout, args.no_cache,
+                             args.primary or "")
         if args.json or args.raw:
             dump_json(response)
         else:

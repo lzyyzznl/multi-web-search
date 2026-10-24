@@ -1,6 +1,6 @@
 ---
 name: multi-web-search
-description: 多引擎搜索聚合，七个引擎并行搜索、自动去重合并排序，支持 DeepSeek 网页抓取（fetch）。适用于需要多源聚合、国内可访问搜索、指定引擎搜索的场景。
+description: 以 DeepSeek 为主引擎的多引擎搜索聚合：主搜索 + 辅助引擎交叉验证/发散 + DeepSeek Fetch 全文抓取，自动去重合并排序。
 ---
 
 # Multi Web Search
@@ -12,6 +12,51 @@ description: 多引擎搜索聚合，七个引擎并行搜索、自动去重合�
 - 需要中文搜索（百度、阿里云 IQS）
 - 需要绕过地域限制的搜索引擎（Brave 在国内直连被墙）
 - 用户指定使用搜索引擎
+
+## 主引擎工作流（必须遵守）
+
+**DeepSeek（`deepseek`）是主引擎**：负责发现结果、判断权威性、抓取全文；其余六个引擎是**辅助引擎**，只用于验证与发散补全，不得压过主引擎结论。
+
+### 1. 主搜索（必须）
+
+```bash
+scripts/multi-web-search search "<用户问题>" --raw
+```
+
+- `--primary deepseek` 是默认值，无需显式传。
+- 返回 `primary: "deepseek"`；`results[].primary == true` 的行来自主引擎，恒排在辅助引擎独有结果之前。
+- 主引擎结果自带 `authority`（0～4，≥3 极权威）、`site_name`、`date`，判断可信度时优先看这三个字段。
+- 若返回值没有 `primary` 字段，说明本机未配置 `DEEPSEEK_API_KEY`，主引擎不生效：先提示用户配置，再按普通多引擎聚合使用。
+
+### 2. 交叉验证 / 发散（按需，通常一次足够）
+
+需要核对事实、补充视角，或主引擎覆盖不足时：
+
+```bash
+scripts/multi-web-search search "<同一问题，或改写后的问题>" --engines aux --raw
+```
+
+- `aux` = 除主引擎外的全部已配置引擎。
+- 用 `agreement` 判断互证：`agreement >= 2` 表示至少两个引擎返回同一 URL；主引擎行 + 高 `agreement` = 最高可信度。
+- 辅助结果只能做三件事：印证主引擎结论（提高置信度）、补充主引擎未覆盖的角度、在至少两个独立来源反驳时标注「存在异议」。
+- 冲突时以主引擎结论为主，辅助结论作为「另说」并列，**不得静默替换**主引擎结果。
+
+### 3. 全文抓取（必须走 DeepSeek Fetch）
+
+对需要精读的主引擎结果（通常 Top 3～5）：
+
+```bash
+scripts/multi-web-search fetch "<url>"          # Markdown 正文
+scripts/multi-web-search fetch "<url>" --json   # {url, title, content}
+```
+
+- 所有网页抓取一律走 `fetch`（DeepSeek Fetch API），不要改用 curl / 其他抓取工具；仅当 `fetch` 返回 404/403 时才换手段，并在回答中说明。
+- `fetch` 与搜索共用 `DEEPSEEK_API_KEY`。
+
+### 4. 呈现
+
+- 引用优先给主引擎 URL；辅助引擎来源单独标注引擎名。
+- 用辅助结果补全的结论要注明来源；同一事实只保留「最高权威 + 最多互证」的一条，不罗列噪声。
 
 ## 执行
 
@@ -44,8 +89,9 @@ scripts/multi-web-search search "query" --raw    # 纯 JSON，管道友好
 
 | 参数 | 说明 | 默认 |
 |------|------|------|
-| `--num N` | 每个引擎返回条数 | 10 |
-| `--engines a,b` | 只用指定引擎，逗号分隔（引擎名见下表） | 全部已配置 |
+| `--num N` | 每个引擎返回条数（DeepSeek 上限 50） | 10 |
+| `--engines a,b` | 只用指定引擎，逗号分隔（引擎名见下表）；`all`=全部已配置，`aux`=除主引擎外的辅助引擎 | 全部已配置 |
+| `--primary NAME` | 主引擎：其结果恒排在辅助引擎之前并标记 `primary`；传 `""` 关闭主引擎优先 | `deepseek` |
 | `--timeout N` | 整体超时（秒） | 8 |
 | `--no-cache` | 跳过缓存，强制实时搜索 | 关 |
 
@@ -59,7 +105,7 @@ scripts/multi-web-search search "query" --raw    # 纯 JSON，管道友好
 | `tavily` | `TAVILY_API_KEY` | Tavily |
 | `aliyun-iqs` | `ALIYUN_IQS_API_KEY` | 阿里云信息查询服务 IQS |
 | `exa` | `EXA_API_KEY` | Exa |
-| `deepseek` | `DEEPSEEK_API_KEY` | DeepSeek 搜索，兼网页抓取 |
+| `deepseek` | `DEEPSEEK_API_KEY` | **主引擎**：DeepSeek 搜索，兼网页抓取 |
 
 ### 网页抓取 Fetch
 
@@ -105,16 +151,23 @@ JSON 结构：
 ```json
 {
   "query": "...",
+  "primary": "deepseek",
   "meta": { "total_raw": N, "total_unique": N, "duration_ms": N },
   "engine_status": { "engine_name": { "status": "ok|error|circuit_open", "results": N, "latency_ms": N, "error": "..." } },
   "results": [{ "title": "...", "url": "...", "snippet": "...", "source": "engine", "score": N,
+                "date": "...", "site_name": "...", "authority": 4,
+                "primary": true, "agreement": 2,
                 "engine_scores": { "engine": N } }]
 }
 ```
+
+- `primary`：本次生效的主引擎；未配置主引擎或主引擎未参与检索时省略。
+- `results[].primary`：该条来自主引擎（排序优先），辅助引擎独有结果不带此字段。
+- `results[].agreement`：同一 URL 命中的引擎数，>1 才输出，用于交叉验证。
 
 缓存命中时 `engine_status` 为 `null`、`duration_ms` 为 0。
 
 ## 熔断与缓存
 
 - 每引擎独立熔断：429/403 立即熔断 24 小时；5xx/网络/超时连续 3 次熔断 24 小时，到期自动恢复。用 `status` 查看。
-- 结果缓存 15 分钟于 `~/.cache/multi-web-search/`（按 query 哈希），熔断状态在 `~/.config/multi-web-search/circuit.json`。
+- 结果缓存 15 分钟于 `~/.cache/multi-web-search/`（按 query + 引擎集合 + 主引擎 + 条数签名哈希，避免不同检索参数串味），熔断状态在 `~/.config/multi-web-search/circuit.json`。

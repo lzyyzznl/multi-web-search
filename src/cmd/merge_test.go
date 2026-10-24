@@ -40,7 +40,7 @@ func TestMergeResultsDedup(t *testing.T) {
 			{Title: "A dup", URL: "https://example.com/p", Source: "brave"},
 		},
 	}
-	merged := mergeResults(input)
+	merged := mergeResults(input, "")
 	if len(merged) != 2 {
 		t.Fatalf("expected 2 unique results, got %d", len(merged))
 	}
@@ -57,7 +57,7 @@ func TestMergeResultsScoreOrdering(t *testing.T) {
 			{Title: "Serper result", URL: "https://s.com", Source: "serper"},
 		},
 	}
-	merged := mergeResults(input)
+	merged := mergeResults(input, "")
 	if len(merged) != 2 {
 		t.Fatalf("expected 2, got %d", len(merged))
 	}
@@ -75,7 +75,7 @@ func TestMergeEngineScoresAccumulation(t *testing.T) {
 			{Title: "A dup", URL: "https://example.com/p", Source: "brave"},
 		},
 	}
-	merged := mergeResults(input)
+	merged := mergeResults(input, "")
 	if len(merged) != 1 {
 		t.Fatalf("expected 1, got %d", len(merged))
 	}

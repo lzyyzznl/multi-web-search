@@ -19,40 +19,63 @@ var engineWeight = map[string]float64{
 
 // mergeResults 按 URL 去重 + 综合评分排序.
 //
-// ponytail: linear scan dedup on sorted keys, fine for <1000 results.
-func mergeResults(all [][]engines.SearchResult) []engines.SearchResult {
-	seen := make(map[string]engines.SearchResult)
+// primary 非空时，来自该引擎的结果优先：同一 URL 保留主引擎的标题/摘要/站点等元数据，
+// 且主引擎结果整体排在辅助引擎独有结果之前；辅助引擎只贡献 engine_scores / agreement，
+// 用于交叉验证与发散补全。primary 为空时退化为纯分数排序。
+//
+// ponytail: O(n) hash dedup; 输出排序 O(n log n)，千级结果足够.
+func mergeResults(all [][]engines.SearchResult, primary string) []engines.SearchResult {
+	type accumulated struct {
+		rec    engines.SearchResult
+		scores map[string]float64
+	}
+
+	seen := make(map[string]*accumulated)
 	for _, results := range all {
 		for _, r := range results {
 			key := engines.NormalizeURL(r.URL)
-			existing, ok := seen[key]
+			score := engineWeight[r.Source] * fallbackScore(r)
+
+			acc, ok := seen[key]
 			if !ok {
-				// 第一次出现，计算初始评分
-				r.Score = engineWeight[r.Source] * fallbackScore(r)
-				r.EngineScores = map[string]float64{r.Source: r.Score}
-				seen[key] = r
-				continue
+				r.Score = score
+				r.Primary = primary != "" && r.Source == primary
+				acc = &accumulated{rec: r, scores: map[string]float64{}}
+				seen[key] = acc
+			} else if primary != "" && r.Source == primary && !acc.rec.Primary {
+				// 主引擎记录优先：用主引擎元数据覆盖辅助引擎首次写入的记录.
+				priorScore := acc.rec.Score
+				acc.rec = r
+				acc.rec.Primary = true
+				acc.rec.Score = priorScore
 			}
-			// 已存在：补充 engineScores，更新最高评分
-			weight := engineWeight[r.Source]
-			score := weight * fallbackScore(r)
-			if score > existing.Score {
-				existing.Score = score
+			if score > acc.rec.Score {
+				acc.rec.Score = score
 			}
-			if existing.EngineScores == nil {
-				existing.EngineScores = make(map[string]float64)
-			}
-			existing.EngineScores[r.Source] = score
-			seen[key] = existing
+			acc.scores[r.Source] = score
 		}
 	}
 
 	result := make([]engines.SearchResult, 0, len(seen))
-	for _, v := range seen {
-		result = append(result, v)
+	for _, acc := range seen {
+		acc.rec.EngineScores = acc.scores
+		if len(acc.scores) > 1 {
+			acc.rec.Agreement = len(acc.scores)
+		}
+		result = append(result, acc.rec)
 	}
+
 	sort.Slice(result, func(i, j int) bool {
-		return result[i].Score > result[j].Score
+		if result[i].Primary != result[j].Primary {
+			return result[i].Primary
+		}
+		if result[i].Score != result[j].Score {
+			return result[i].Score > result[j].Score
+		}
+		if result[i].Agreement != result[j].Agreement {
+			return result[i].Agreement > result[j].Agreement
+		}
+		return result[i].URL < result[j].URL
 	})
 	return result
 }
