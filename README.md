@@ -39,7 +39,7 @@ flowchart LR
 
 | 引擎名(`--engines` 用) | 环境变量 | 说明 |
 |------|---------|------|
-| `deepseek` | `DEEPSEEK_API_KEY` | 主引擎(默认):DeepSeek 搜索 + 网页抓取 |
+| `deepseek` | `DEEPSEEK_API_KEY` | 主引擎(默认):DeepSeek 搜索 + 网页抓取 + 文档/图片 OCR |
 | `serper` | `SERPER_API_KEY` | Google 搜索结果 |
 | `baidu` | `BAIDU_API_KEY` | 中文搜索 |
 | `brave` | `BRAVE_API_KEY` | 国际/英文内容 |
@@ -137,6 +137,14 @@ multi-web-search search 'DeepSeek V4 site:github.com lang:zh after:2025' --engin
 # 网页抓取正文(DeepSeek Fetch API,需 DEEPSEEK_API_KEY)
 multi-web-search fetch "https://example.com/article"     # 输出 Markdown 正文
 multi-web-search fetch "https://example.com/article" --json  # {url, title, content}
+# 文档/图片 OCR(DeepSeek OCR API,需 DEEPSEEK_API_KEY)
+multi-web-search ocr ./scan.png                       # 本地文件
+multi-web-search ocr "https://example.com/a.pdf"      # 远程文件
+multi-web-search ocr ./report.pdf --json              # 完整响应(pages/usage/id)
+multi-web-search ocr ./slide.pptx --purpose rich_layout_recognition  # 保留版面坐标
+
+# fetch 遇到 PDF/Word/PPT/图片会自动转 OCR
+multi-web-search fetch "https://example.com/whitepaper.pdf"
 
 # 自定义整体超时(秒)
 multi-web-search search "大模型" --timeout 15
@@ -194,6 +202,7 @@ multi-web-search status
 - **磁盘缓存** — 参数级签名缓存 15 分钟,相同参数命中缓存,节省付费 API 调用
 - **智能去重** — URL 归一化后去重,保留最高评分
 - **综合排序** — 主引擎优先 × 引擎权重 × 评分降序
+- **文档/图片 OCR** — DeepSeek OCR 识别 PDF/Word/PPT/图片，逐页输出文字；`fetch` 自动识别文档/图片链接并转 OCR，无需手工区分
 - **跨会话持久化** — 熔断状态保存在 `~/.config/multi-web-search/circuit.json`
 - **多平台构建** — build.sh 交叉编译 linux/darwin/windows (amd64/arm64)
 
@@ -228,9 +237,10 @@ multi-web-search/
 ├── .codex-plugin/           # Codex 插件配置
 ├── src/                     # Go 源码
 │   ├── cmd/
-│   │   ├── root.go          # CLI 入口(search + fetch + status)
+│   │   ├── root.go          # CLI 入口(search + fetch + ocr + status)
 │   │   ├── search.go        # 全并行编排器
 │   │   ├── fetch.go         # DeepSeek Fetch 网页抓取
+│   │   ├── ocr.go           # DeepSeek OCR(PDF/Word/PPT/图片)
 │   │   ├── merge.go         # URL 去重 + 排序
 │   │   ├── circuit.go       # 熔断器
 │   │   ├── env.go           # API Key 自动检测

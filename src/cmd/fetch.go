@@ -27,6 +27,25 @@ var fetchCmd = &cobra.Command{
 		if apiKey == "" {
 			return fmt.Errorf("deepseek: API Key 未配置 (%s)", envVarMap["deepseek"])
 		}
+		// PDF/Word/PPT/图片：DeepSeek Fetch 只能抓网页，改走 OCR.
+		if shouldOCR(rawURL) {
+			res, err := ocrSource(rawURL, "text_recognition")
+			if err != nil {
+				return err
+			}
+			content := ocrText(res)
+			if jsonOut {
+				enc := json.NewEncoder(os.Stdout)
+				enc.SetIndent("", "  ")
+				return enc.Encode(struct {
+					URL     string `json:"url"`
+					Title   string `json:"title"`
+					Content string `json:"content"`
+				}{URL: rawURL, Content: content})
+			}
+			fmt.Println(content)
+			return nil
+		}
 
 		page, err := deepseekFetch(apiKey, rawURL)
 		if err != nil {

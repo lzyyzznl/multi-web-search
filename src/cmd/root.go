@@ -139,8 +139,11 @@ func Execute() {
 
 	fetchCmd.Flags().Bool("json", false, "JSON 格式输出")
 
+	ocrCmd.Flags().Bool("json", false, "输出完整 OCR 响应 JSON")
+	ocrCmd.Flags().String("purpose", "text_recognition", "text_recognition 或 rich_layout_recognition")
+
 	rootCmd.Flags().BoolP("version", "v", false, "print version and exit")
-	rootCmd.AddCommand(searchCmd, statusCmd, fetchCmd, keyCmd)
+	rootCmd.AddCommand(searchCmd, statusCmd, fetchCmd, ocrCmd, keyCmd)
 
 	if err := rootCmd.Execute(); err != nil {
 		os.Exit(1)

@@ -1,6 +1,6 @@
 ---
 name: multi-web-search
-description: 以 DeepSeek 为主引擎的多引擎搜索聚合：主搜索 + 辅助引擎交叉验证/发散 + DeepSeek Fetch 全文抓取，自动去重合并排序。
+description: 以 DeepSeek 为主引擎的多引擎搜索聚合：主搜索 + 辅助引擎交叉验证/发散 + DeepSeek Fetch 全文抓取 + DeepSeek OCR 识别文档/图片，自动去重合并排序。
 ---
 
 # Multi Web Search
@@ -41,7 +41,7 @@ scripts/multi-web-search search "<同一问题，或改写后的问题>" --engin
 - 辅助结果只能做三件事：印证主引擎结论（提高置信度）、补充主引擎未覆盖的角度、在至少两个独立来源反驳时标注「存在异议」。
 - 冲突时以主引擎结论为主，辅助结论作为「另说」并列，**不得静默替换**主引擎结果。
 
-### 3. 全文抓取（必须走 DeepSeek Fetch）
+### 3. 全文抓取 / 文档识别（必须走 DeepSeek）
 
 对需要精读的主引擎结果（通常 Top 3～5）：
 
@@ -51,7 +51,8 @@ scripts/multi-web-search fetch "<url>" --json   # {url, title, content}
 ```
 
 - 所有网页抓取一律走 `fetch`（DeepSeek Fetch API），不要改用 curl / 其他抓取工具；仅当 `fetch` 返回 404/403 时才换手段，并在回答中说明。
-- `fetch` 与搜索共用 `DEEPSEEK_API_KEY`。
+- `fetch` 发现目标是 PDF / Word / PowerPoint / 图片（按扩展名或 Content-Type 判断）时，自动改用 DeepSeek OCR 返回逐页文字。
+- 结果里出现文档或图片链接，也可直接显式识别（见下节）；`fetch` 与 `ocr` 共用 `DEEPSEEK_API_KEY`。
 
 ### 4. 呈现
 
@@ -61,10 +62,10 @@ scripts/multi-web-search fetch "<url>" --json   # {url, title, content}
 ## 执行
 
 统一入口（跨平台同名，按当前系统自动选择就地二进制，缺失时回落 Python）：
-
 ```bash
 scripts/multi-web-search search "query"          # 搜索
-scripts/multi-web-search fetch "https://..."     # DeepSeek Fetch 网页抓取（Markdown 正文）
+scripts/multi-web-search fetch "https://..."     # DeepSeek Fetch 网页抓取（Markdown 正文；文档/图片自动 OCR）
+scripts/multi-web-search ocr "<file-or-url>"     # DeepSeek OCR 识别 PDF/Word/PPT/图片
 scripts/multi-web-search status                   # 检查引擎状态
 scripts/multi-web-search --version                # 版本
 ```
@@ -105,7 +106,7 @@ scripts/multi-web-search search "query" --raw    # 纯 JSON，管道友好
 | `tavily` | `TAVILY_API_KEY` | Tavily |
 | `aliyun-iqs` | `ALIYUN_IQS_API_KEY` | 阿里云信息查询服务 IQS |
 | `exa` | `EXA_API_KEY` | Exa |
-| `deepseek` | `DEEPSEEK_API_KEY` | **主引擎**：DeepSeek 搜索，兼网页抓取 |
+| `deepseek` | `DEEPSEEK_API_KEY` | **主引擎**：DeepSeek 搜索，兼网页抓取与文档/图片 OCR |
 
 ### 网页抓取 Fetch
 
@@ -117,6 +118,21 @@ scripts/multi-web-search fetch "https://example.com/article" --json  # {url, tit
 ```
 
 需 `DEEPSEEK_API_KEY`。
+
+### 文档 / 图片 OCR
+
+DeepSeek OCR 识别 PDF、Word（doc/docx）、PowerPoint（ppt/pptx）与图片（png/jpeg/webp/gif/bmp/tiff），逐页返回文字：
+
+```bash
+scripts/multi-web-search ocr ./scan.png                      # 本地文件
+scripts/multi-web-search ocr "https://example.com/a.pdf"     # 远程文件
+scripts/multi-web-search ocr ./report.pdf --json             # 完整响应（pages/usage/id）
+scripts/multi-web-search ocr ./slide.pptx --purpose rich_layout_recognition  # 版面/坐标标记
+```
+
+- `--purpose text_recognition`（默认）：无图 Word/PPT 直接提取文字，其他逐页识别；`rich_layout_recognition`：全部逐页识别，保留 `<｜ref｜>` 与归一化坐标（0–1000）。
+- 单文件上限 100 MiB / 1000 页；需 `DEEPSEEK_API_KEY`。多页纯文本输出用 `--- 第 N 页 ---` 分隔；`pages[].finish_reason == "length"` 表示该页被截断。
+- 搜索/抓取拿到文档或图片链接时优先 OCR，不要用文本模型猜内容。
 
 ### DeepSeek 搜索语法
 

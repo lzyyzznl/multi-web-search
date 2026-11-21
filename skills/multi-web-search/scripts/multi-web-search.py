@@ -32,6 +32,7 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
+import uuid
 from concurrent.futures import ThreadPoolExecutor, wait
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -404,6 +405,111 @@ def fetch_page(url: str) -> dict:
         raise SystemExit(http_error_text("deepseek fetch", exc)) from None
     except Exception as exc:
         raise SystemExit(f"deepseek fetch: {exc}") from None
+
+
+# ------------------------------------------------------------ DeepSeek OCR
+
+OCR_TIMEOUT = 190  # 上传 + 识别 + 返回的总时长上限（接口 180s，留余量）
+OCR_URL = "https://api.deepseek.com/v1/tools/ocr"
+OCR_MAX_BYTES = 100 << 20  # 单文件上限 100 MiB
+OCR_PURPOSES = ("text_recognition", "rich_layout_recognition")
+OCR_EXTENSIONS = {".pdf", ".doc", ".docx", ".ppt", ".pptx",
+                  ".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp", ".tif", ".tiff"}
+OCR_CONTENT_TYPES = {"application/pdf",
+                     "application/msword", "application/vnd.openxmlformats.wordprocessingml.document",
+                     "application/vnd.ms-powerpoint",
+                     "application/vnd.openxmlformats.presentationml.presentation",
+                     "image/png", "image/jpeg", "image/webp", "image/gif", "image/bmp", "image/tiff"}
+
+
+def read_ocr_source(source: str) -> tuple[str, bytes]:
+    """返回 (文件名, 原始字节)：http(s) 下载，其余按本地路径读取。"""
+    if source.startswith(("http://", "https://")):
+        request = urllib.request.Request(source, headers={"User-Agent": USER_AGENT})
+        try:
+            with opener().open(request, timeout=OCR_TIMEOUT) as response:
+                data = response.read(OCR_MAX_BYTES + 1)
+                name = os.path.basename(urllib.parse.urlsplit(response.geturl()).path) or "file"
+        except urllib.error.HTTPError as exc:
+            raise SystemExit(f"ocr: 下载 HTTP {exc.code}") from None
+        except Exception as exc:
+            raise SystemExit(f"ocr: 下载失败: {exc}") from None
+        if len(data) > OCR_MAX_BYTES:
+            raise SystemExit("ocr: 文件过大（上限 100 MiB）")
+        return name, data
+    path = Path(source)
+    try:
+        size = path.stat().st_size
+    except OSError as exc:
+        raise SystemExit(f"ocr: {exc}") from None
+    if size > OCR_MAX_BYTES:
+        raise SystemExit(f"ocr: 文件过大 ({size} 字节，上限 100 MiB)")
+    return path.name, path.read_bytes()
+
+
+def _multipart_body(purpose: str, name: str, data: bytes) -> tuple[bytes, str]:
+    boundary = "----multi-web-search-" + uuid.uuid4().hex
+    head = (f"--{boundary}\r\n"
+            f'Content-Disposition: form-data; name="purpose"\r\n\r\n{purpose}\r\n'
+            f"--{boundary}\r\n"
+            f'Content-Disposition: form-data; name="file"; filename="{name}"\r\n'
+            f"Content-Type: application/octet-stream\r\n\r\n").encode("utf-8")
+    tail = f"\r\n--{boundary}--\r\n".encode("utf-8")
+    return head + data + tail, f"multipart/form-data; boundary={boundary}"
+
+
+def ocr_file(source: str, purpose: str) -> dict:
+    """调用 DeepSeek OCR（与 src/cmd/ocr.go 对齐）。"""
+    key = os.environ.get(ENV_VAR_MAP["deepseek"], "")
+    if not key:
+        raise SystemExit(f"deepseek: API Key 未配置 ({ENV_VAR_MAP['deepseek']})")
+    name, data = read_ocr_source(source)
+    body, content_type = _multipart_body(purpose, name, data)
+    request = urllib.request.Request(OCR_URL,
+                                     data=body, method="POST",
+                                     headers={"Content-Type": content_type,
+                                              "Authorization": f"Bearer {key}",
+                                              "User-Agent": USER_AGENT})
+    try:
+        with opener().open(request, timeout=OCR_TIMEOUT) as response:
+            result = json.loads(response.read().decode("utf-8", "replace"))
+    except urllib.error.HTTPError as exc:
+        raise SystemExit(http_error_text("deepseek ocr", exc)) from None
+    except Exception as exc:
+        raise SystemExit(f"deepseek ocr: {exc}") from None
+    if "error" in result:
+        raise SystemExit(f"deepseek ocr: {(result.get('error') or {}).get('message', '')}")
+    return result
+
+
+def ocr_text(result: dict) -> str:
+    """拼接所有页文本；多页时加页码分隔（与 Go ocrText 一致）。"""
+    pages = result.get("pages") or []
+    out = []
+    for pos, page in enumerate(pages):
+        if len(pages) > 1:
+            out.append(f"--- 第 {int(page.get('index', pos)) + 1} 页 ---\n")
+        text = page.get("text") or ""
+        out.append(text if text.endswith("\n") else text + "\n")
+    return "".join(out).rstrip("\n")
+
+
+def sniff_content_type(url: str) -> str:
+    """只取响应头（Range 请求避免下载正文），失败返回空串。"""
+    try:
+        request = urllib.request.Request(url, headers={"Range": "bytes=0-0",
+                                                       "User-Agent": USER_AGENT})
+        with opener().open(request, timeout=15) as response:
+            return response.headers.get_content_type()
+    except Exception:
+        return ""
+
+
+def should_ocr(url: str) -> bool:
+    """先看扩展名，再嗅探 Content-Type；失败按网页处理。"""
+    if os.path.splitext(urllib.parse.urlsplit(url).path)[1].lower() in OCR_EXTENSIONS:
+        return True
+    return sniff_content_type(url) in OCR_CONTENT_TYPES
 
 
 ENGINES = {
@@ -856,6 +962,11 @@ def build_parser() -> argparse.ArgumentParser:
     fetch.add_argument("url")
     fetch.add_argument("--json", action="store_true")
 
+    ocr = sub.add_parser("ocr")
+    ocr.add_argument("source")
+    ocr.add_argument("--json", action="store_true")
+    ocr.add_argument("--purpose", default="text_recognition")
+
     key = sub.add_parser("key")
     key_sub = key.add_subparsers(dest="key_command")
     key_add = key_sub.add_parser("add")
@@ -895,6 +1006,14 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "status":
         return cmd_status()
     if args.command == "fetch":
+        # PDF/Word/PPT/图片：Fetch 只能抓网页，改走 OCR.
+        if should_ocr(args.url):
+            content = ocr_text(ocr_file(args.url, "text_recognition"))
+            if args.json:
+                dump_json({"url": args.url, "title": "", "content": content})
+            else:
+                print(content)
+            return 0
         page = fetch_page(args.url)
         if args.json:
             dump_json({"url": args.url, "title": page.get("title", ""),
@@ -904,6 +1023,17 @@ def main(argv: list[str] | None = None) -> int:
             if title:
                 print(f"# {title}")
             print(page.get("content") or "")
+        return 0
+    if args.command == "ocr":
+        if args.purpose not in OCR_PURPOSES:
+            print("Error: --purpose 只能是 text_recognition 或 rich_layout_recognition",
+                  file=sys.stderr)
+            return 1
+        result = ocr_file(args.source, args.purpose)
+        if args.json:
+            dump_json(result)
+        else:
+            print(ocr_text(result))
         return 0
     if args.command == "key":
         return cmd_key(args)
